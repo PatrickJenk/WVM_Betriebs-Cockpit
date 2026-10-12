@@ -1,0 +1,22 @@
+{
+  "name": "waermeverbund-betriebs-cockpit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lokale Demo für Wärmeverbund Marzili und ewb, ohne Docker",
+  "scripts": {
+    "start": "node --watch server.cjs",
+    "check": "node tests/smoke.cjs && node tests/documents.cjs && node tests/logbook.cjs && node tests/mentions.cjs && node tests/session-identity.cjs && node tests/http.cjs && node tests/shared.cjs && node tests/security.cjs",
+    "format": "prettier --write src public tests server.cjs package.json .vscode",
+    "start:lan": "node --watch server.cjs --lan",
+    "start:production": "node --env-file-if-exists=.env.production server.cjs --production",
+    "backup": "node tools/backup.cjs",
+    "check:security": "node tests/security.cjs"
+  },
+  "engines": {
+    "node": ">=22.16"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.9"
+  }
+}
