@@ -2031,3 +2031,85 @@ textarea {
 .priority.kritisch i {
   background: #d43b3b;
 }
+.nav-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-add {
+  border: 1px solid #b8cbc2;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 20px;
+  cursor: pointer;
+  width: 28px;
+}
+.nav-create {
+  display: block;
+  margin: 8px 18px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid #b8cbc2;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+}
+.folder-branch > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.folder-branch > summary::before {
+  content: "›";
+  padding: 0 4px;
+}
+.folder-branch[open] > summary::before {
+  content: "⌄";
+}
+.folder-branch > summary .folder-item {
+  flex: 1;
+  min-width: 0;
+}
+.folder-branch > .folder-branch {
+  margin-left: 12px;
+}
+.tabs {
+  flex-wrap: wrap;
+}
+/* Bestehende Ansichten: nur die Admin-Bedienelemente ergänzen. */
+.site-nav-row,
+.tab-item {
+  display: flex;
+  align-items: center;
+}
+.site-nav-row .site-link {
+  flex: 1;
+  min-width: 0;
+}
+.nav-edit {
+  background: transparent;
+  color: inherit;
+  padding: 4px;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.tabs .tab-edit {
+  padding: 8px 3px;
+  font-size: 13px;
+}
+.structure-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+.structure-row > span {
+  flex: 1;
+  min-width: 120px;
+}
+.structure-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

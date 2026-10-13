@@ -177,6 +177,7 @@ function visible(state, u) {
       },
     };
   const data = structuredClone(state.data);
+  data.structure ??= defaultStructure();
   if (
     u.mustChangePassword ||
     (security.mfaEnabled && security.production && admin(u) && !u.mfaSecret)
@@ -253,7 +254,12 @@ const json = (res, status, value) => {
   );
 };
 const requireUser = security.requireUser;
+function defaultStructure() {
+  return structuredClone(requireStructure);
+}
+let requireStructure = { networks: [], sites: [], groups: [], sections: [] };
 function validate(data) {
+  if (data?.structure) validateStructure(data.structure);
   if (
     !data ||
     !["users", "entries", "documents", "folders", "plants"].every((k) =>
@@ -308,7 +314,8 @@ function validate(data) {
       }
   };
   // Historische Teilnehmer können Namen als alte IDs enthalten; nie als Dateipfad verwenden.
-  for (const key of ["documents", "folders", "plants"]) walk(data[key]);
+  for (const key of ["documents", "folders", "plants", "structure"])
+    walk(data[key]);
   for (const e of data.entries) {
     if (!security.validId(e.siteId) || !security.validId(e.plantId))
       throw security.error("Ungültiger Standort.");
@@ -324,6 +331,13 @@ function validate(data) {
   }
 }
 module.exports = async function api(req, res) {
+  const seedDefaults = await import("./src/data/seed.js");
+  requireStructure = {
+    networks: seedDefaults.networks,
+    sites: seedDefaults.sites,
+    groups: [],
+    sections: [],
+  };
   const url = req.url.split("?")[0];
   if (!url.startsWith("/api/")) return false;
   try {
@@ -651,6 +665,13 @@ module.exports = async function api(req, res) {
     if (url === "/api/state" && req.method === "PUT") {
       requireUser(user);
       const { findMentions } = await import("./src/services/mentions.js");
+      const defaults = await import("./src/data/seed.js");
+      requireStructure = {
+        networks: defaults.networks,
+        sites: defaults.sites,
+        groups: [],
+        sections: [],
+      };
       const input = JSON.parse((await body(req, 16 * 1024 * 1024)).toString());
       validate(input.data);
       const result = locked(() => {
@@ -666,8 +687,50 @@ module.exports = async function api(req, res) {
           );
         const before = latest.data,
           next = input.data;
+        before.structure ??= defaultStructure();
+        next.structure ??= structuredClone(before.structure);
+        validateStructure(next.structure);
+        if (
+          !admin(user) &&
+          JSON.stringify(before.structure) !== JSON.stringify(next.structure)
+        )
+          throw security.error("Nur Admin darf die Navigation verwalten.", 403);
         const folderMap = new Map(next.folders.map((f) => [f.id, f]));
+        const removedSites = new Set(
+          before.structure.sites
+            .filter((s) => !next.structure.sites.some((n) => n.id === s.id))
+            .map((s) => s.id),
+        );
+        const removedSections = new Set(
+          before.structure.sections
+            .filter((s) => !next.structure.sections.some((n) => n.id === s.id))
+            .map((s) => s.id),
+        );
+        for (const key of ["folders", "plants", "documents", "entries"])
+          if (next[key].some((item) => removedSites.has(item.siteId)))
+            throw security.error(
+              "Bitte alle Inhalte des gelöschten Standorts ebenfalls entfernen.",
+            );
+        if (next.folders.some((f) => removedSections.has(f.sectionId)))
+          throw security.error(
+            "Bitte die Ordner des gelöschten Registers ebenfalls entfernen.",
+          );
+        const removedFolders = new Set(
+          before.folders.filter((f) => !folderMap.has(f.id)).map((f) => f.id),
+        );
+        if (next.documents.some((d) => removedFolders.has(d.folderId)))
+          throw security.error(
+            "Bitte Dokumente gelöschter Ordner verschieben oder ebenfalls entfernen.",
+          );
         for (const f of next.folders) {
+          if (
+            f.sectionId &&
+            !next.structure.sections.some(
+              (s) =>
+                s.id === f.sectionId && s.siteId === f.siteId && !s.builtin,
+            )
+          )
+            throw security.error("Ungültige Registerzuordnung des Ordners.");
           const visited = new Set([f.id]);
           let parent = f.parentId;
           while (parent) {
@@ -677,6 +740,7 @@ module.exports = async function api(req, res) {
             if (
               !ancestor ||
               ancestor.siteId !== f.siteId ||
+              (ancestor.sectionId || "docs") !== (f.sectionId || "docs") ||
               visited.has(parent)
             )
               throw security.error("Ungültige Ordnerstruktur.");
@@ -686,9 +750,14 @@ module.exports = async function api(req, res) {
         }
         for (const key of Object.keys(before))
           if (
-            !["users", "entries", "documents", "folders", "plants"].includes(
-              key,
-            )
+            ![
+              "users",
+              "entries",
+              "documents",
+              "folders",
+              "plants",
+              "structure",
+            ].includes(key)
           )
             next[key] = before[key];
         if (!admin(user)) {
@@ -1161,3 +1230,76 @@ module.exports = async function api(req, res) {
     return true;
   }
 };
+
+function validateStructure(value) {
+  if (!value || typeof value !== "object")
+    throw security.error("Ungültige Navigation.");
+  for (const key of ["networks", "sites", "groups", "sections"]) {
+    if (!Array.isArray(value[key]) || value[key].length > 5000)
+      throw security.error("Ungültige Navigation.");
+    const ids = new Set();
+    for (const item of value[key]) {
+      if (
+        !item ||
+        !security.validId(item.id) ||
+        ids.has(item.id) ||
+        typeof item.name !== "string" ||
+        !item.name.trim() ||
+        item.name.length > 100
+      )
+        throw security.error("Ungültiger Name oder ID.");
+      ids.add(item.id);
+    }
+  }
+  for (const item of value.sites) {
+    if (
+      (item.type && !["mbus", "heat-substation"].includes(item.type)) ||
+      (item.address !== undefined &&
+        (typeof item.address !== "string" || item.address.length > 250)) ||
+      !value.networks.some((n) => n.id === item.heatNetworkId) ||
+      (item.groupId &&
+        !value.groups.some(
+          (g) => g.id === item.groupId && g.networkId === item.heatNetworkId,
+        ))
+    )
+      throw security.error("Ungültige Standortzuordnung.");
+  }
+  for (const item of value.groups) {
+    if (!value.networks.some((n) => n.id === item.networkId))
+      throw security.error("Ungültige Kategorie.");
+    const visited = new Set([item.id]);
+    let parent = item.parentId;
+    while (parent) {
+      const ancestor = value.groups.find((g) => g.id === parent);
+      if (
+        !ancestor ||
+        ancestor.networkId !== item.networkId ||
+        visited.has(parent) ||
+        visited.size > 32
+      )
+        throw security.error("Ungültige Kategoriehierarchie.");
+      visited.add(parent);
+      parent = ancestor.parentId;
+    }
+  }
+  const builtinKeys = new Set();
+  for (const item of value.sections) {
+    if (
+      !value.sites.some((s) => s.id === item.siteId) ||
+      ["log", "docs"].includes(item.id) ||
+      (item.builtin !== undefined && !["log", "docs"].includes(item.builtin)) ||
+      (item.order !== undefined &&
+        (!Number.isInteger(item.order) ||
+          item.order < 0 ||
+          item.order > 10000)) ||
+      (item.hidden !== undefined && typeof item.hidden !== "boolean")
+    )
+      throw security.error("Ungültiges Register.");
+    if (item.builtin) {
+      const key = item.siteId + ":" + item.builtin;
+      if (builtinKeys.has(key))
+        throw security.error("Doppeltes Standardregister.");
+      builtinKeys.add(key);
+    }
+  }
+}

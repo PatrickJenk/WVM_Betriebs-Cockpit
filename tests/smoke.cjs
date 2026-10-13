@@ -17,6 +17,8 @@ const fs = require("node:fs"),
   const { initializeAccounts, createAccounts, isAdministrator } =
     await import("../src/auth/accounts.js");
   const { createLogbook } = await import("../src/features/logbook.js");
+  const { createStructure } = await import("../src/admin/structure.js");
+  const { siteTabs } = await import("../src/services/structure.js");
   const { createDocuments } = await import("../src/features/documents.js");
   const { createDashboard } = await import("../src/features/dashboard.js");
   const { uuid } = await import("../src/services/ids.js");
@@ -77,6 +79,8 @@ const fs = require("node:fs"),
       stationLabel,
       categories,
       createAdministration,
+      createStructure,
+      siteTabs,
       initializeAccounts,
       createAccounts,
       isAdministrator,
@@ -118,6 +122,9 @@ const fs = require("node:fs"),
     context,
   );
   vm.runInContext("Object.assign(user,data.users[0]);shell()", context);
+  assert.ok(!node("#app").innerHTML.includes("Betriebsdokumente"));
+  assert.ok(!node("#app").innerHTML.includes("operations-add"));
+  assert.ok(node("#app").innerHTML.includes('data-structure-kind="networks"'));
   assert.match(node("#content").innerHTML, /marzili-logo/);
   assert.match(
     node("#app").innerHTML,
@@ -157,6 +164,27 @@ const fs = require("node:fs"),
   assert.ok(node("#content").innerHTML.includes('id="my-mentions"'));
   assert.ok(!node("#content").innerHTML.includes("network-card"));
   vm.runInContext("current='eiger';tab='docs';render()", context);
+  node("#new-section").onclick();
+  node("#structure-form").onsubmit({
+    preventDefault() {},
+    currentTarget: {
+      elements: {
+        itemName: { value: "Arbeitsrapporte" },
+        position: { value: "2" },
+      },
+    },
+  });
+  const addedTab = data.structure.sections.find(
+    (s) => !s.builtin && s.siteId === "eiger",
+  );
+  assert.ok(
+    node("#content").innerHTML.includes(
+      `data-tab="${addedTab.id}" class="selected"`,
+    ),
+  );
+  assert.equal(vm.runInContext("tab", context), addedTab.id);
+  assert.ok(node("#content").innerHTML.includes("Arbeitsrapporte"));
+  vm.runInContext("tab='docs';filters={};render()", context);
   assert.match(node("#content").innerHTML, /id="upload" disabled/);
   assert.ok(!node("#content").innerHTML.includes('data-folder="unfiled"'));
   vm.runInContext(
@@ -171,6 +199,9 @@ const fs = require("node:fs"),
   assert.ok(!node("#app").innerHTML.includes('id="manage-users"'));
   assert.ok(!node("#content").innerHTML.includes('id="manage-plants"'));
   assert.ok(!node("#content").innerHTML.includes('id="new-folder"'));
+  assert.ok(!node("#content").innerHTML.includes('id="new-section"'));
+  assert.ok(!node("#content").innerHTML.includes("data-edit-section="));
+  assert.ok(!node("#app").innerHTML.includes("data-structure-kind="));
   assert.ok(node("#content").innerHTML.includes('id="upload" >'));
   vm.runInContext("accounts.logout()", context);
   assert.match(node("#app").innerHTML, /login-form/);

@@ -111,3 +111,22 @@ npm.cmd run backup
 Tests verwenden getrennte Daten. Tägliche Sicherungen entstehen automatisch im
 Datenverzeichnis; zusätzlich extern sichern. Wiederherstellung und Produktionsmodus:
 [INFOMANIAK.md](INFOMANIAK.md). Die lokale Demo bleibt zum Weiterentwickeln verfügbar.
+
+Admin-Erweiterungen: Über die **+**-Schaltflächen in der Navigation lassen sich Verbünde,
+Heizzentralen, Unterstationen und Unterkategorien anlegen. **Navigation verwalten** beim
+Admin-Profil dient zum Umbenennen und Verschieben über die Auswahl von Verbund und Kategorie.
+In einem Standort ergänzt **+ Register** weitere Dokumentbereiche, beispielsweise Arbeitsrapporte.
+Das Stiftsymbol direkt am Verbund, Standort, an einer Unterkategorie oder einem Register öffnet
+die Bearbeitung. Dort steht auch **Löschen** zur Verfügung. Die Sicherheitsabfrage nennt die
+betroffenen Standorte, Ordner, Dokumente, Anlagen und Logbucheinträge vor dem endgültigen Löschen.
+**Register verwalten** erlaubt mit den Pfeilen die Reihenfolge zu ändern; im Bearbeitungsformular
+kann die Position auch direkt gewählt werden. Neue Register werden nach dem Speichern geöffnet.
+Die Standardregister Logbuch und Dokumente können umbenannt, verschoben oder ausgeblendet werden.
+Ihre Inhalte bleiben beim Ausblenden erhalten; über Register verwalten können sie wieder eingeblendet werden.
+Zusätzliche Register und Ordner werden inklusive ihrer Inhalte erst nach Bestätigung gelöscht.
+Ordner und Unterordner lassen sich
+aufklappen und über die Ordnerbearbeitung verschieben. Die Startansicht zeigt nur die oberste
+Ordnerebene; eine Suche durchsucht den jeweiligen Dokumentbereich.
+Alle Änderungen werden am gemeinsamen Server gespeichert und bei angemeldeten Benutzern
+innerhalb weniger Sekunden aktualisiert. Bei gleichzeitigen Änderungen verhindert der Server
+ungewolltes Überschreiben; dann die Ansicht aktualisieren und erneut speichern.

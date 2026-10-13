@@ -1,3 +1,5 @@
+import { createStructure } from "./admin/structure.js";
+import { siteTabs } from "./services/structure.js";
 import { isOverdue } from "./services/entry-status.js";
 import { entryMentions, mentionSummary } from "./services/mentions.js";
 import { uuid } from "./services/ids.js";
@@ -166,32 +168,53 @@ let navState = {};
 function navExpanded(id) {
   return navState[id] === true;
 }
+function syncStructure() {
+  data.structure ??= {
+    networks: structuredClone(networks),
+    sites: structuredClone(sites),
+    groups: [],
+    sections: [],
+  };
+  networks.splice(0, networks.length, ...data.structure.networks);
+  sites.splice(0, sites.length, ...data.structure.sites);
+}
 function shell() {
+  syncStructure();
+  if (current && !site(current)) {
+    current = null;
+    tab = "log";
+    filters = {};
+    history.replaceState(null, "", "#dashboard");
+  }
   if (!user.id) {
     accounts.login();
     return;
   }
   $("#app").innerHTML =
-    `<aside class="sidebar"><a class="brand" href="#dashboard"><span class="partner-logos sidebar-logos"><img class="marzili" src="/assets/marzili-logo.png" alt="Wärmeverbund Marzili Bern AG"><span class="partner-cross" aria-hidden="true">×</span><img class="ewb" src="/assets/ewb-logo.png" alt="ewb"></span><span class="brand-title">Wärmeverbund<small>Betriebs Cockpit</small></span></a><div class="nav-label">BETRIEBSFÜHRUNG</div><a href="#dashboard" class="nav-dashboard ${!current ? "active" : ""}">${icon("grid")} Dashboard</a><a href="/api/handbook" target="_blank" rel="noopener noreferrer" class="nav-handbook">${icon("file")} Benutzerhandbuch</a><div class="nav-label">WÄRMEVERBÜNDE</div>${networks
+    `<aside class="sidebar"><a class="brand" href="#dashboard"><span class="partner-logos sidebar-logos"><img class="marzili" src="/assets/marzili-logo.png" alt="Wärmeverbund Marzili Bern AG"><span class="partner-cross" aria-hidden="true">×</span><img class="ewb" src="/assets/ewb-logo.png" alt="ewb"></span><span class="brand-title">Wärmeverbund<small>Betriebs Cockpit</small></span></a><div class="nav-label">BETRIEBSFÜHRUNG</div><a href="#dashboard" class="nav-dashboard ${!current ? "active" : ""}">${icon("grid")} Dashboard</a><a href="/api/handbook" target="_blank" rel="noopener noreferrer" class="nav-handbook">${icon("file")} Benutzerhandbuch</a><div class="nav-label">WÄRMEVERBÜNDE ${isAdministrator(user) ? '<button class="nav-add" id="network-add" title="Wärmeverbund hinzufügen">+</button>' : ""}</div>${networks
       .map(
         (n) =>
-          `<details class="network-group" data-nav-group="${n.id}" ${navExpanded(n.id) ? "open" : ""}><summary>${icon("pin")}<span>Wärmeverbund ${n.name}</span><span class="caret">⌄</span></summary>${[
+          `<details class="network-group" data-nav-group="${n.id}" ${navExpanded(n.id) ? "open" : ""}><summary>${icon("pin")}<span>Wärmeverbund ${esc(n.name)}</span>${editStructure("networks", n)}<span class="caret">⌄</span></summary>${[
             ["heating", "Heizzentralen", "heat", false],
             ["substations", "Unterstationen", "meter", true],
           ]
             .map(([key, label, symbol, substation]) => {
               const members = sites.filter(
                 (s) =>
-                  s.heatNetworkId === n.id && Boolean(s.type) === substation,
+                  s.heatNetworkId === n.id &&
+                  !s.groupId &&
+                  Boolean(s.type) === substation,
               );
               const groupId = n.id + "-" + key;
-              return `<details class="station-group" data-nav-group="${groupId}" ${navExpanded(groupId, members) ? "open" : ""}><summary>${icon(symbol)}<span>${label}</span><small>${members.length}</small><span class="caret">⌄</span></summary>${members.map((s) => `<a class="site-link ${current === s.id ? "active" : ""}" href="#site/${s.id}" title="${esc(stationLabel(s))}">${icon(stationIcon(s))}${esc(s.name)}${open(data.entries.filter((e) => e.siteId === s.id)).length ? '<span class="nav-count">' + open(data.entries.filter((e) => e.siteId === s.id)).length + "</span>" : ""}</a>`).join("")}</details>`;
+              return `<details class="station-group" data-nav-group="${groupId}" ${navExpanded(groupId, members) ? "open" : ""}><summary>${icon(symbol)}<span>${label}</span><small>${members.length}</small><span class="caret">⌄</span></summary>${isAdministrator(user) ? `<button class="nav-create" data-new-site="${esc(n.id)}" data-site-type="${substation ? "mbus" : ""}">+ ${substation ? "Unterstation" : "Heizzentrale"}</button>` : ""}${members.map((s) => `<div class="site-nav-row"><a class="site-link ${current === s.id ? "active" : ""}" href="#site/${s.id}" title="${esc(stationLabel(s))}">${icon(stationIcon(s))}${esc(s.name)}${open(data.entries.filter((e) => e.siteId === s.id)).length ? '<span class="nav-count">' + open(data.entries.filter((e) => e.siteId === s.id)).length + "</span>" : ""}</a>${editStructure("sites", s)}</div>`).join("")}</details>`;
             })
-            .join("")}</details>`,
+            .join(
+              "",
+            )}${categoryTree(n.id)}${isAdministrator(user) ? `<button class="nav-create" data-new-group="${esc(n.id)}">+ Unterkategorie</button>` : ""}</details>`,
       )
       .join(
         "",
-      )}<div class="sidebar-bottom"><div class="local-info">Gemeinsame Betriebsplattform<small>Gemeinsame Serverdaten</small></div><div class="profile"><span class="avatar">${esc(user.initials)}</span><div>${esc(user.name)}<small>${esc(user.role)}</small></div></div><div class="account-controls">${isAdministrator(user) ? '<button id="manage-users">Benutzer verwalten</button>' : ""}<button id="logout">Abmelden</button></div></div></aside><main><header class="topbar"><button class="icon-button mobile-toggle" title="Navigation öffnen" aria-label="Navigation öffnen">${icon("menu")}</button><span>Betriebsführung <b>/</b> ${current ? esc(site(current).name) : "Übersicht"}</span><div class="top-right"><span class="date">${fmt(new Date())}</span><span class="avatar small">${esc(user.initials)}</span></div></header><div class="content" id="content"></div></main>`;
+      )}<div class="sidebar-bottom"><div class="local-info">Gemeinsame Betriebsplattform<small>Gemeinsame Serverdaten</small></div><div class="profile"><span class="avatar">${esc(user.initials)}</span><div>${esc(user.name)}<small>${esc(user.role)}</small></div></div><div class="account-controls">${isAdministrator(user) ? '<button id="manage-structure">Navigation verwalten</button><button id="manage-users">Benutzer verwalten</button>' : ""}<button id="logout">Abmelden</button></div></div></aside><main><header class="topbar"><button class="icon-button mobile-toggle" title="Navigation öffnen" aria-label="Navigation öffnen">${icon("menu")}</button><span>Betriebsführung <b>/</b> ${current ? esc(site(current).name) : "Übersicht"}</span><div class="top-right"><span class="date">${fmt(new Date())}</span><span class="avatar small">${esc(user.initials)}</span></div></header><div class="content" id="content"></div></main>`;
   document.querySelectorAll("[data-nav-group]").forEach((group) => {
     group.ontoggle = () => {
       navState[group.dataset.navGroup] = group.open;
@@ -211,6 +234,25 @@ function shell() {
   if ($("#own-password-button"))
     $("#own-password-button").onclick = accounts.ownPassword;
   if ($("#manage-users")) $("#manage-users").onclick = accounts.manage;
+  if ($("#manage-structure")) $("#manage-structure").onclick = structure.manage;
+  if ($("#network-add"))
+    $("#network-add").onclick = () => structure.form("networks");
+  document.querySelectorAll("[data-new-site]").forEach(
+    (b) =>
+      (b.onclick = () =>
+        structure.form("sites", null, {
+          heatNetworkId: b.dataset.newSite,
+          type: b.dataset.siteType,
+        })),
+  );
+  document
+    .querySelectorAll("[data-new-group]")
+    .forEach(
+      (b) =>
+        (b.onclick = () =>
+          structure.form("groups", null, { networkId: b.dataset.newGroup })),
+    );
+  structure.bind();
   render();
 }
 function render() {
@@ -219,6 +261,11 @@ function render() {
     return;
   }
   const s = current ? site(current) : null;
+  const tabs = s ? siteTabs(data, current) : [];
+  if (s && !tabs.some((t) => t.key === tab)) {
+    tab = tabs[0]?.key || null;
+    filters = {};
+  }
   const entries = data.entries.filter(
     (e) => isVisible(e) && (!current || e.siteId === current),
   );
@@ -230,7 +277,11 @@ function render() {
   );
   const pageActions = `<div class="page-actions"><button class="secondary mentions-button mentions-${mentions.color}" id="my-mentions" title="Meine Erwähnungen: ${mentions.unread} neue" aria-label="Meine Erwähnungen: ${mentions.count} Erwähnungen"><span aria-hidden="true">✉</span><span>${mentions.count}</span></button><button class="primary new-entry">${icon("plus")} Neuer Logbucheintrag</button></div>`;
   $("#content").innerHTML =
-    `${!current ? '<a href="#dashboard" class="dashboard-logo partner-logos" aria-label="Dashboard"><img class="marzili" src="/assets/marzili-logo.png" alt="Wärmeverbund Marzili Bern AG"><span class="partner-cross" aria-hidden="true">×</span><img class="ewb" src="/assets/ewb-logo.png" alt="ewb"></a>' : ""}<div class="page-heading"><div><div class="eyebrow">${s ? "WÄRMEVERBUND " + esc(network(s.heatNetworkId).name.toUpperCase()) : "GEMEINSAM. ÜBERSICHTLICH. IM BETRIEB."}</div><h1>${s ? esc(s.name) : "Wärmeverbund Betriebs Cockpit"}</h1><p>${s ? stationLabel(s) + " · Betriebsdokumentation und Unterlagen." : "Übersicht über aktuelle Einträge und offene Pendenzen aller Wärmeverbünde."}</p></div>${pageActions}</div>${s ? `<div class="site-banner"><span class="station-type">${icon(stationIcon(s))} ${esc(stationLabel(s))}</span><a class="maps-link" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address + ", Schweiz")}" target="_blank" rel="noopener noreferrer" title="Adresse in Google Maps öffnen">${icon("pin")} ${esc(s.address)} </a><span>${open(entries).length} offene Pendenzen</span><span>${entries.length} Logbucheinträge</span>${isAdministrator(user) ? '<button class="secondary" id="manage-plants">Anlagen verwalten</button>' : ""}</div><div class="tabs"><button data-tab="log" class="${tab === "log" ? "selected" : ""}">${icon("file")} Logbuch <span>${entries.length}</span></button><button data-tab="docs" class="${tab === "docs" ? "selected" : ""}">${icon("file")} Dokumente <span>${data.documents.filter((d) => d.siteId === current).length}</span></button></div>` : dashboard(entries)}<section class="panel">${s && tab === "docs" ? documentsView() : logView(entries)}</section><footer>Wärmeverbund Betriebs Cockpit <span>Daten werden zentral und geschützt am Server gespeichert</span></footer>`;
+    `${!current ? '<a href="#dashboard" class="dashboard-logo partner-logos" aria-label="Dashboard"><img class="marzili" src="/assets/marzili-logo.png" alt="Wärmeverbund Marzili Bern AG"><span class="partner-cross" aria-hidden="true">×</span><img class="ewb" src="/assets/ewb-logo.png" alt="ewb"></a>' : ""}<div class="page-heading"><div><div class="eyebrow">${s ? "WÄRMEVERBUND " + esc(network(s.heatNetworkId).name.toUpperCase()) : "GEMEINSAM. ÜBERSICHTLICH. IM BETRIEB."}</div><h1>${s ? esc(s.name) : "Wärmeverbund Betriebs Cockpit"}</h1><p>${s ? stationLabel(s) + " · Betriebsdokumentation und Unterlagen." : "Übersicht über aktuelle Einträge und offene Pendenzen aller Wärmeverbünde."}</p></div>${pageActions}</div>${
+      s
+        ? `<div class="site-banner"><span class="station-type">${icon(stationIcon(s))} ${esc(stationLabel(s))}</span><a class="maps-link" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address + ", Schweiz")}" target="_blank" rel="noopener noreferrer" title="Adresse in Google Maps öffnen">${icon("pin")} ${esc(s.address)} </a><span>${open(entries).length} offene Pendenzen</span><span>${entries.length} Logbucheinträge</span>${isAdministrator(user) ? '<button class="secondary" id="manage-plants">Anlagen verwalten</button>' : ""}</div><div class="tabs">${tabs.map((t) => `<div class="tab-item"><button data-tab="${esc(t.key)}" class="${tab === t.key ? "selected" : ""}">${icon("file")} ${esc(t.name)}${t.builtin === "log" ? `<span>${entries.length}</span>` : t.builtin === "docs" ? `<span>${data.documents.filter((d) => d.siteId === current && (!d.folderId || data.folders.some((f) => f.id === d.folderId && !f.sectionId))).length}</span>` : ""}</button>${isAdministrator(user) ? `<button class="tab-edit" data-edit-section="${esc(t.id)}" aria-label="Register bearbeiten: ${esc(t.name)}" title="Register bearbeiten">✎</button>` : ""}</div>`).join("")}${isAdministrator(user) ? '<button id="new-section" title="Register hinzufügen">+ Register</button><button id="manage-tabs" title="Register und Reihenfolge verwalten">✎ Register verwalten</button>' : ""}</div>`
+        : dashboard(entries)
+    }<section class="panel">${s && !tab ? '<div class="empty"><h3>Keine Register eingeblendet</h3><p>Administratoren können über «Register verwalten» Register wieder einblenden oder hinzufügen.</p></div>' : s && tab !== "log" ? documentsView() : logView(entries)}</section><footer>Wärmeverbund Betriebs Cockpit <span>Daten werden zentral und geschützt am Server gespeichert</span></footer>`;
   $(".new-entry").onclick = () => entryForm();
   if ($(".dashboard-logo")) $(".dashboard-logo").onclick = resetDashboard;
   if ($("#my-mentions"))
@@ -286,7 +337,19 @@ function render() {
   document
     .querySelectorAll("[data-entry]")
     .forEach((b) => (b.onclick = () => entryDetail(b.dataset.entry)));
-  if (s && tab === "docs") bindDocs();
+  if (s && tab && tab !== "log") bindDocs();
+  if ($("#new-section"))
+    $("#new-section").onclick = () =>
+      structure.form("sections", null, { siteId: current });
+  if ($("#manage-tabs"))
+    $("#manage-tabs").onclick = () => structure.manageTabs(current);
+  document.querySelectorAll("[data-edit-section]").forEach(
+    (b) =>
+      (b.onclick = (e) => {
+        e.stopPropagation();
+        structure.form("sections", b.dataset.editSection, { siteId: current });
+      }),
+  );
   if ($("#manage-plants"))
     $("#manage-plants").onclick = () => admin.plants(current);
 }
@@ -327,6 +390,17 @@ const context = {
   getFile,
   deleteFile,
   getState,
+  onStructureChange: (result) => {
+    if (
+      result.kind === "sections" &&
+      !result.deleted &&
+      result.siteId === current
+    ) {
+      tab = result.tab;
+      filters = {};
+    }
+    shell();
+  },
   selectFilter,
   resetFilters: () => {
     filters = {};
@@ -334,6 +408,7 @@ const context = {
   },
   getAdmin: () => admin,
 };
+const structure = createStructure(context);
 const { documentsView, bindDocs, download } = createDocuments(context);
 const { logView, bindFilters, entryForm, entryDetail } = createLogbook({
   ...context,
@@ -378,6 +453,7 @@ const accounts = createAccounts({
   onLogout: () => repository.logout?.(),
 });
 const admin = createAdministration({
+  getState,
   data,
   user,
   esc,
@@ -394,6 +470,7 @@ function resetDashboard(event) {
   route();
 }
 function route() {
+  syncStructure();
   const match = location.hash.match(/^#site\/([^/]+)/);
   current = match && site(match[1]) ? match[1] : null;
   tab = "log";
@@ -444,7 +521,7 @@ setInterval(async () => {
     if (updated && !modal.open) {
       Object.assign(data, updated);
       if (!accounts.restore()) accounts.logout();
-      else render();
+      else shell();
     }
   } catch (error) {
     if (error.status === 401) accounts.logout();
@@ -452,3 +529,27 @@ setInterval(async () => {
     syncing = false;
   }
 }, 2500);
+
+function categoryTree(networkId, parentId = null) {
+  return (data.structure?.groups || [])
+    .filter(
+      (g) => g.networkId === networkId && (g.parentId || null) === parentId,
+    )
+    .map(
+      (g) =>
+        `<details class="station-group" data-nav-group="${esc(g.id)}" ${navExpanded(g.id) ? "open" : ""}><summary>${esc(g.name)}${editStructure("groups", g)}<span class="caret">⌄</span></summary>${sites
+          .filter((s) => s.groupId === g.id)
+          .map(
+            (s) =>
+              `<div class="site-nav-row"><a class="site-link ${current === s.id ? "active" : ""}" href="#site/${esc(s.id)}">${icon(stationIcon(s))}${esc(s.name)}</a>${editStructure("sites", s)}</div>`,
+          )
+          .join("")}${categoryTree(networkId, g.id)}</details>`,
+    )
+    .join("");
+}
+
+function editStructure(kind, item) {
+  return isAdministrator(user)
+    ? `<button type="button" class="nav-edit" data-structure-kind="${kind}" data-structure-id="${esc(item.id)}" title="Bearbeiten: ${esc(item.name)}" aria-label="Bearbeiten: ${esc(item.name)}">✎</button>`
+    : "";
+}

@@ -38,7 +38,7 @@ export function createDocuments(context) {
       ? (n / 1024).toFixed(1) + " KB"
       : (n / 1024 / 1024).toFixed(1) + " MB";
   function documentsView() {
-    const { current, filters } = getState(),
+    const { current, filters, tab = "docs" } = getState(),
       admin = getAdmin(),
       folder = folderAt(current, filters.folder);
     const searching = !!filters.search,
@@ -47,7 +47,13 @@ export function createDocuments(context) {
       .filter(
         (d) =>
           d.siteId === current &&
-          (searching || !folder || d.folderId === folder.id) &&
+          (searching
+            ? data.folders.some(
+                (f) => f.id === d.folderId && (f.sectionId || "docs") === tab,
+              )
+            : folder
+              ? d.folderId === folder.id
+              : !d.folderId && tab === "docs") &&
           (!query || d.name.toLowerCase().includes(query)),
       )
       .sort((a, b) => a.name.localeCompare(b.name, "de"));
@@ -55,6 +61,7 @@ export function createDocuments(context) {
       .filter(
         (f) =>
           f.siteId === current &&
+          (f.sectionId || "docs") === tab &&
           (searching
             ? f.name.toLowerCase().includes(query)
             : (f.parentId || null) === (folder?.id || null)),

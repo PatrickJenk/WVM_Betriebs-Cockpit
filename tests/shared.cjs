@@ -71,6 +71,28 @@ async function call(port, url, method = "GET", payload, token) {
 
   let snapshot = (await call(4177, "/api/state", "GET", undefined, admin))
     .value; // Token und Daten zwischen Serverprozessen nutzbar.
+  snapshot.data.structure.networks.push({
+    id: "demo-network",
+    name: "Demo Verbund",
+  });
+  snapshot.data.structure.groups.push({
+    id: "demo-group",
+    name: "Nord",
+    networkId: "demo-network",
+    parentId: null,
+  });
+  snapshot.data.structure.sites.push({
+    id: "demo-site",
+    name: "Demo Zentrale",
+    heatNetworkId: "demo-network",
+    groupId: "demo-group",
+    address: "Bern",
+  });
+  snapshot.data.structure.sections.push({
+    id: "demo-reports",
+    name: "Arbeitsrapporte",
+    siteId: "demo-site",
+  });
   snapshot.data.folders.push({
     id: "test-folder",
     siteId: "eiger",
@@ -79,6 +101,20 @@ async function call(port, url, method = "GET", payload, token) {
   });
   let saved = await call(4176, "/api/state", "PUT", snapshot, admin);
   assert.equal(saved.status, 200);
+  const sharedStructure = (
+    await call(4177, "/api/state", "GET", undefined, admin)
+  ).value;
+  assert.equal(
+    sharedStructure.data.structure.sites.find((s) => s.id === "demo-site")
+      .groupId,
+    "demo-group",
+  );
+  const cyclic = structuredClone(sharedStructure);
+  cyclic.data.structure.groups[0].parentId = "demo-group";
+  assert.equal(
+    (await call(4176, "/api/state", "PUT", cyclic, admin)).status,
+    400,
+  );
   const add = async (token, id) => {
     const response = await fetch(`http://127.0.0.1:4176/api/files/${id}`, {
       method: "PUT",
@@ -143,6 +179,23 @@ async function call(port, url, method = "GET", payload, token) {
       })
     ).status,
     200,
+  );
+  const memberStructure = (
+    await call(4177, "/api/state", "GET", undefined, member.token)
+  ).value;
+  assert.ok(
+    memberStructure.data.structure.sections.some(
+      (s) => s.id === "demo-reports",
+    ),
+  );
+  memberStructure.data.structure.networks.push({
+    id: "forbidden",
+    name: "Verboten",
+  });
+  assert.equal(
+    (await call(4177, "/api/state", "PUT", memberStructure, member.token))
+      .status,
+    403,
   );
   const remove = async (token, id) => {
     const state = (await call(4177, "/api/state", "GET", undefined, token))
