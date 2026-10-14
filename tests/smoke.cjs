@@ -124,7 +124,16 @@ const fs = require("node:fs"),
   vm.runInContext("Object.assign(user,data.users[0]);shell()", context);
   assert.ok(!node("#app").innerHTML.includes("Betriebsdokumente"));
   assert.ok(!node("#app").innerHTML.includes("operations-add"));
-  assert.ok(node("#app").innerHTML.includes('data-structure-kind="networks"'));
+  assert.ok(node("#app").innerHTML.includes('id="manage-cockpit"'));
+  for (const duplicate of [
+    'id="manage-users"',
+    'id="manage-structure"',
+    'id="network-add"',
+    "data-new-site=",
+    "data-new-group=",
+    "data-structure-kind=",
+  ])
+    assert.ok(!node("#app").innerHTML.includes(duplicate), duplicate);
   assert.match(node("#content").innerHTML, /marzili-logo/);
   assert.match(
     node("#app").innerHTML,
@@ -197,6 +206,7 @@ const fs = require("node:fs"),
     context,
   );
   assert.ok(!node("#app").innerHTML.includes('id="manage-users"'));
+  assert.ok(!node("#app").innerHTML.includes('id="manage-cockpit"'));
   assert.ok(!node("#content").innerHTML.includes('id="manage-plants"'));
   assert.ok(!node("#content").innerHTML.includes('id="new-folder"'));
   assert.ok(!node("#content").innerHTML.includes('id="new-section"'));

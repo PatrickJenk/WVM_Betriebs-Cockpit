@@ -1,3 +1,4 @@
+import { createManagement } from "./admin/management.js";
 import { createStructure } from "./admin/structure.js";
 import { siteTabs } from "./services/structure.js";
 import { isOverdue } from "./services/entry-status.js";
@@ -191,10 +192,10 @@ function shell() {
     return;
   }
   $("#app").innerHTML =
-    `<aside class="sidebar"><a class="brand" href="#dashboard"><span class="partner-logos sidebar-logos"><img class="marzili" src="/assets/marzili-logo.png" alt="Wärmeverbund Marzili Bern AG"><span class="partner-cross" aria-hidden="true">×</span><img class="ewb" src="/assets/ewb-logo.png" alt="ewb"></span><span class="brand-title">Wärmeverbund<small>Betriebs Cockpit</small></span></a><div class="nav-label">BETRIEBSFÜHRUNG</div><a href="#dashboard" class="nav-dashboard ${!current ? "active" : ""}">${icon("grid")} Dashboard</a><a href="/api/handbook" target="_blank" rel="noopener noreferrer" class="nav-handbook">${icon("file")} Benutzerhandbuch</a><div class="nav-label">WÄRMEVERBÜNDE ${isAdministrator(user) ? '<button class="nav-add" id="network-add" title="Wärmeverbund hinzufügen">+</button>' : ""}</div>${networks
+    `<aside class="sidebar"><a class="brand" href="#dashboard"><span class="partner-logos sidebar-logos"><img class="marzili" src="/assets/marzili-logo.png" alt="Wärmeverbund Marzili Bern AG"><span class="partner-cross" aria-hidden="true">×</span><img class="ewb" src="/assets/ewb-logo.png" alt="ewb"></span><span class="brand-title">Wärmeverbund<small>Betriebs Cockpit</small></span></a><div class="nav-label">BETRIEBSFÜHRUNG</div><a href="#dashboard" class="nav-dashboard ${!current ? "active" : ""}">${icon("grid")} Dashboard</a><a href="/api/handbook" target="_blank" rel="noopener noreferrer" class="nav-handbook">${icon("file")} Benutzerhandbuch</a><div class="nav-label">WÄRMEVERBÜNDE </div>${networks
       .map(
         (n) =>
-          `<details class="network-group" data-nav-group="${n.id}" ${navExpanded(n.id) ? "open" : ""}><summary>${icon("pin")}<span>Wärmeverbund ${esc(n.name)}</span>${editStructure("networks", n)}<span class="caret">⌄</span></summary>${[
+          `<details class="network-group" data-nav-group="${n.id}" ${navExpanded(n.id) ? "open" : ""}><summary>${icon("pin")}<span>Wärmeverbund ${esc(n.name)}</span><span class="caret">⌄</span></summary>${[
             ["heating", "Heizzentralen", "heat", false],
             ["substations", "Unterstationen", "meter", true],
           ]
@@ -206,15 +207,13 @@ function shell() {
                   Boolean(s.type) === substation,
               );
               const groupId = n.id + "-" + key;
-              return `<details class="station-group" data-nav-group="${groupId}" ${navExpanded(groupId, members) ? "open" : ""}><summary>${icon(symbol)}<span>${label}</span><small>${members.length}</small><span class="caret">⌄</span></summary>${isAdministrator(user) ? `<button class="nav-create" data-new-site="${esc(n.id)}" data-site-type="${substation ? "mbus" : ""}">+ ${substation ? "Unterstation" : "Heizzentrale"}</button>` : ""}${members.map((s) => `<div class="site-nav-row"><a class="site-link ${current === s.id ? "active" : ""}" href="#site/${s.id}" title="${esc(stationLabel(s))}">${icon(stationIcon(s))}${esc(s.name)}${open(data.entries.filter((e) => e.siteId === s.id)).length ? '<span class="nav-count">' + open(data.entries.filter((e) => e.siteId === s.id)).length + "</span>" : ""}</a>${editStructure("sites", s)}</div>`).join("")}</details>`;
+              return `<details class="station-group" data-nav-group="${groupId}" ${navExpanded(groupId, members) ? "open" : ""}><summary>${icon(symbol)}<span>${label}</span><small>${members.length}</small><span class="caret">⌄</span></summary>${members.map((s) => `<div class="site-nav-row"><a class="site-link ${current === s.id ? "active" : ""}" href="#site/${s.id}" title="${esc(stationLabel(s))}">${icon(stationIcon(s))}${esc(s.name)}${open(data.entries.filter((e) => e.siteId === s.id)).length ? '<span class="nav-count">' + open(data.entries.filter((e) => e.siteId === s.id)).length + "</span>" : ""}</a></div>`).join("")}</details>`;
             })
-            .join(
-              "",
-            )}${categoryTree(n.id)}${isAdministrator(user) ? `<button class="nav-create" data-new-group="${esc(n.id)}">+ Unterkategorie</button>` : ""}</details>`,
+            .join("")}${categoryTree(n.id)}</details>`,
       )
       .join(
         "",
-      )}<div class="sidebar-bottom"><div class="local-info">Gemeinsame Betriebsplattform<small>Gemeinsame Serverdaten</small></div><div class="profile"><span class="avatar">${esc(user.initials)}</span><div>${esc(user.name)}<small>${esc(user.role)}</small></div></div><div class="account-controls">${isAdministrator(user) ? '<button id="manage-structure">Navigation verwalten</button><button id="manage-users">Benutzer verwalten</button>' : ""}<button id="logout">Abmelden</button></div></div></aside><main><header class="topbar"><button class="icon-button mobile-toggle" title="Navigation öffnen" aria-label="Navigation öffnen">${icon("menu")}</button><span>Betriebsführung <b>/</b> ${current ? esc(site(current).name) : "Übersicht"}</span><div class="top-right"><span class="date">${fmt(new Date())}</span><span class="avatar small">${esc(user.initials)}</span></div></header><div class="content" id="content"></div></main>`;
+      )}<div class="sidebar-bottom"><div class="local-info">Gemeinsame Betriebsplattform<small>Gemeinsame Serverdaten</small></div><div class="profile"><span class="avatar">${esc(user.initials)}</span><div>${esc(user.name)}<small>${esc(user.role)}</small></div></div><div class="account-controls">${isAdministrator(user) ? '<button id="manage-cockpit">Cockpit verwalten</button>' : ""}<button id="logout">Abmelden</button></div></div></aside><main><header class="topbar"><button class="icon-button mobile-toggle" title="Navigation öffnen" aria-label="Navigation öffnen">${icon("menu")}</button><span>Betriebsführung <b>/</b> ${current ? esc(site(current).name) : "Übersicht"}</span><div class="top-right"><span class="date">${fmt(new Date())}</span><span class="avatar small">${esc(user.initials)}</span></div></header><div class="content" id="content"></div></main>`;
   document.querySelectorAll("[data-nav-group]").forEach((group) => {
     group.ontoggle = () => {
       navState[group.dataset.navGroup] = group.open;
@@ -233,26 +232,9 @@ function shell() {
     );
   if ($("#own-password-button"))
     $("#own-password-button").onclick = accounts.ownPassword;
-  if ($("#manage-users")) $("#manage-users").onclick = accounts.manage;
-  if ($("#manage-structure")) $("#manage-structure").onclick = structure.manage;
-  if ($("#network-add"))
-    $("#network-add").onclick = () => structure.form("networks");
-  document.querySelectorAll("[data-new-site]").forEach(
-    (b) =>
-      (b.onclick = () =>
-        structure.form("sites", null, {
-          heatNetworkId: b.dataset.newSite,
-          type: b.dataset.siteType,
-        })),
-  );
-  document
-    .querySelectorAll("[data-new-group]")
-    .forEach(
-      (b) =>
-        (b.onclick = () =>
-          structure.form("groups", null, { networkId: b.dataset.newGroup })),
-    );
-  structure.bind();
+  if ($("#manage-cockpit"))
+    $("#manage-cockpit").onclick = () =>
+      createManagement({ ...context, structure, accounts, admin }).open();
   render();
 }
 function render() {
@@ -537,19 +519,13 @@ function categoryTree(networkId, parentId = null) {
     )
     .map(
       (g) =>
-        `<details class="station-group" data-nav-group="${esc(g.id)}" ${navExpanded(g.id) ? "open" : ""}><summary>${esc(g.name)}${editStructure("groups", g)}<span class="caret">⌄</span></summary>${sites
+        `<details class="station-group" data-nav-group="${esc(g.id)}" ${navExpanded(g.id) ? "open" : ""}><summary>${esc(g.name)}<span class="caret">⌄</span></summary>${sites
           .filter((s) => s.groupId === g.id)
           .map(
             (s) =>
-              `<div class="site-nav-row"><a class="site-link ${current === s.id ? "active" : ""}" href="#site/${esc(s.id)}">${icon(stationIcon(s))}${esc(s.name)}</a>${editStructure("sites", s)}</div>`,
+              `<div class="site-nav-row"><a class="site-link ${current === s.id ? "active" : ""}" href="#site/${esc(s.id)}">${icon(stationIcon(s))}${esc(s.name)}</a></div>`,
           )
           .join("")}${categoryTree(networkId, g.id)}</details>`,
     )
     .join("");
-}
-
-function editStructure(kind, item) {
-  return isAdministrator(user)
-    ? `<button type="button" class="nav-edit" data-structure-kind="${kind}" data-structure-id="${esc(item.id)}" title="Bearbeiten: ${esc(item.name)}" aria-label="Bearbeiten: ${esc(item.name)}">✎</button>`
-    : "";
 }

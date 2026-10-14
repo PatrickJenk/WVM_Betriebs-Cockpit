@@ -28,6 +28,7 @@ server.stdout.once("data", async () => {
       "/src/features/documents.js",
       "/src/admin/administration.js",
       "/src/admin/structure.js",
+      "/src/admin/management.js",
       "/src/auth/accounts.js",
       "/src/data/seed.js",
       "/src/services/repository.js",

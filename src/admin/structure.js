@@ -25,6 +25,16 @@ export function createStructure(c) {
     groups: "Unterkategorie",
     sections: "Register",
   };
+  const help = {
+    networks:
+      "Ein Wärmeverbund bündelt seine Heizzentralen und Unterstationen in der Navigation.",
+    sites:
+      "Ein Standort erhält Logbuch und Dokumentenablage. Anlagen kannst du danach über «Anlagen verwalten» ergänzen.",
+    groups:
+      "Unterkategorien gliedern die Navigation, zum Beispiel nach Quartier. Wähle den Verbund und bei Bedarf eine übergeordnete Kategorie.",
+    sections:
+      "Ein zusätzliches Register ist ein Dokumentbereich, zum Beispiel für Arbeitsrapporte. Es ergänzt keine neuen Formular- oder Berechnungsfunktionen.",
+  };
   const $ = (selector) => document.querySelector(selector);
   function commit(action, result) {
     if (!admin()) return false;
@@ -82,7 +92,7 @@ export function createStructure(c) {
       } while (size !== descendants.size);
     }
     show(
-      `<form id="structure-form"><div class="modal-heading"><h2>${esc(titles[kind])} ${item ? "bearbeiten" : "hinzufügen"}</h2><button type="button" class="close icon-button" aria-label="Schliessen">×</button></div><div class="form-body"><label>Name<input name="itemName" required maxlength="100" value="${esc(value.name || "")}"></label>${
+      `<form id="structure-form"><div class="modal-heading"><h2>${esc(titles[kind])} ${item ? "bearbeiten" : "hinzufügen"}</h2><button type="button" class="close icon-button" aria-label="Schliessen">×</button></div><div class="form-body"><p class="management-hint">${esc(help[kind])}</p><label>Name<input name="itemName" required maxlength="100" value="${esc(value.name || "")}"></label>${
         ["sites", "groups"].includes(kind)
           ? `<label>Wärmeverbund<select name="network">${options(
               data.structure.networks.map((n) => [n.id, n.name]),
@@ -109,7 +119,7 @@ export function createStructure(c) {
           : ""
       }${
         kind === "sections"
-          ? `<label>Position<select name="position">${options(
+          ? `<label>Position in der Registerleiste<select name="position">${options(
               Array.from({ length: tabs.length + (item ? 0 : 1) }, (_, i) => [
                 String(i),
                 String(i + 1),
@@ -119,8 +129,9 @@ export function createStructure(c) {
               ),
             )}</select></label>${value.hidden ? "<p>Dieses Register ist ausgeblendet. Speichern blendet es wieder ein.</p>" : ""}`
           : ""
-      }<p id="structure-error" role="alert"></p></div><div class="modal-footer">${item ? '<button type="button" class="danger-button" id="structure-delete">Löschen</button>' : ""}<button class="primary" type="submit">Speichern</button></div></form>`,
+      }<p id="structure-error" role="alert"></p></div><div class="modal-footer">${item ? '<button type="button" class="danger-button" id="structure-delete">Löschen</button>' : ""}<button class="secondary" type="button" id="structure-back">Abbrechen</button><button class="primary" type="submit">${item ? "Änderungen speichern" : titles[kind] + " hinzufügen"}</button></div></form>`,
     );
+    $("#structure-back").onclick = () => modal.close();
     if ($("#structure-delete"))
       $("#structure-delete").onclick = () => remove(kind, item.id, sectionSite);
     const formNode = $("#structure-form"),
@@ -292,7 +303,7 @@ export function createStructure(c) {
     const visible = siteTabs(data, siteId),
       all = siteTabs(data, siteId, true);
     show(
-      `<div class="modal-heading"><h2>Register verwalten</h2><button class="close icon-button" aria-label="Schliessen">×</button></div><div class="form-body"><button class="secondary" id="tab-add">+ Register hinzufügen</button>${all.map((t) => `<div class="structure-row"><span>${esc(t.name)}${t.hidden ? " · ausgeblendet" : ""}</span><button class="secondary" data-tab-edit="${esc(t.id)}" aria-label="Register bearbeiten: ${esc(t.name)}">✎</button>${t.hidden ? "" : `<button class="secondary" data-tab-move="${esc(t.key)}" data-direction="-1" ${visible[0]?.key === t.key ? "disabled" : ""} aria-label="${esc(t.name)} nach links">←</button><button class="secondary" data-tab-move="${esc(t.key)}" data-direction="1" ${visible.at(-1)?.key === t.key ? "disabled" : ""} aria-label="${esc(t.name)} nach rechts">→</button><button class="danger" data-tab-delete="${esc(t.id)}" aria-label="Register löschen: ${esc(t.name)}">Löschen</button>`}</div>`).join("")}<p id="structure-error" role="alert"></p></div>`,
+      `<div class="modal-heading"><h2>Register verwalten</h2><button class="close icon-button" aria-label="Schliessen">×</button></div><div class="form-body"><p class="management-hint">${esc(data.structure.sites.find((s) => s.id === siteId)?.name || "Standort")} · Register sind die Reiter innerhalb eines Standorts. Mit den Pfeilen änderst du ihre Reihenfolge.</p><button class="secondary" id="tab-add">+ Register hinzufügen</button>${all.map((t) => `<div class="structure-row"><span>${esc(t.name)}${t.hidden ? " · ausgeblendet" : ""}</span><button class="secondary" data-tab-edit="${esc(t.id)}" aria-label="Register bearbeiten: ${esc(t.name)}">${t.hidden ? "Wieder einblenden / Bearbeiten" : "Bearbeiten"}</button>${t.hidden ? "" : `<button class="secondary" data-tab-move="${esc(t.key)}" data-direction="-1" ${visible[0]?.key === t.key ? "disabled" : ""} aria-label="${esc(t.name)} nach links">←</button><button class="secondary" data-tab-move="${esc(t.key)}" data-direction="1" ${visible.at(-1)?.key === t.key ? "disabled" : ""} aria-label="${esc(t.name)} nach rechts">→</button><button class="danger" data-tab-delete="${esc(t.id)}" aria-label="Register ${t.builtin ? "ausblenden" : "löschen"}: ${esc(t.name)}">${t.builtin ? "Ausblenden" : "Löschen"}</button>`}</div>`).join("")}<p id="structure-error" role="alert"></p></div>`,
     );
     $("#tab-add").onclick = () => form("sections", null, { siteId });
     document
@@ -315,11 +326,65 @@ export function createStructure(c) {
             moveTab(siteId, b.dataset.tabMove, Number(b.dataset.direction))),
       );
   }
+  function locationLabel(kind, item) {
+    const st = data.structure;
+    if (kind === "networks") return "Wärmeverbund";
+    const network = st.networks.find(
+      (n) => n.id === (item.heatNetworkId || item.networkId),
+    );
+    const parts = [network?.name];
+    let groupId = item.groupId || item.parentId;
+    const seen = new Set();
+    const groups = [];
+    while (groupId && !seen.has(groupId)) {
+      seen.add(groupId);
+      const group = st.groups.find((g) => g.id === groupId);
+      if (!group) break;
+      groups.unshift(group.name);
+      groupId = group.parentId;
+    }
+    return [...parts, ...groups].filter(Boolean).join(" / ");
+  }
   function manage() {
     if (!admin()) return;
+    const labels = {
+      networks: "Wärmeverbünde",
+      sites: "Heizzentralen / Unterstationen",
+      groups: "Unterkategorien",
+    };
     show(
-      `<div class="modal-heading"><h2>Navigation verwalten</h2><button class="close icon-button" aria-label="Schliessen">×</button></div><div class="form-body">${["networks", "sites", "groups"].map((k) => `<h3>${{ networks: "Wärmeverbünde", sites: "Heizzentralen / Unterstationen", groups: "Unterkategorien" }[k]}</h3><button class="secondary" data-structure-add="${k}">+ Hinzufügen</button>${data.structure[k].map((x) => `<div class="structure-row"><span>${esc(x.name)}</span><button class="secondary" data-structure-kind="${k}" data-structure-id="${esc(x.id)}">✎ Bearbeiten / Verschieben</button><button class="danger" data-structure-delete-kind="${k}" data-structure-id="${esc(x.id)}">Löschen</button></div>`).join("")}`).join("")}</div>`,
+      `<div class="modal-heading"><div><h2>Navigation verwalten</h2><p>Verbünde und Standorte anlegen, umbenennen oder verschieben.</p></div><button class="close icon-button" aria-label="Schliessen">×</button></div><div class="form-body"><label>Navigation durchsuchen<input id="structure-search" type="search" placeholder="Name, Wärmeverbund oder Unterkategorie"></label><p class="muted">Beim Bearbeiten eines Standorts kannst du seine Zuordnung ändern. Inhalte bleiben beim Verschieben zugeordnet.</p>${[
+        "networks",
+        "sites",
+        "groups",
+      ]
+        .map(
+          (k) =>
+            `<section class="management-section" data-structure-section><div class="management-section-heading"><h3>${labels[k]} <small>(${data.structure[k].length})</small></h3><button class="secondary" data-structure-add="${k}" ${k !== "networks" && !data.structure.networks.length ? "disabled" : ""}>+ ${titles[k]} hinzufügen</button></div>${!data.structure[k].length ? `<p class="muted">Noch keine Einträge. ${k !== "networks" && !data.structure.networks.length ? "Lege zuerst einen Wärmeverbund an." : "Über «Hinzufügen» legst du den ersten Eintrag an."}</p>` : ""}${[
+              ...data.structure[k],
+            ]
+              .sort((a, b) => a.name.localeCompare(b.name, "de-CH"))
+              .map(
+                (x) =>
+                  `<div class="structure-row" data-structure-search="${esc(x.name + " " + locationLabel(k, x))}"><span><strong>${esc(x.name)}</strong><small class="structure-location">${esc(locationLabel(k, x))}</small></span><button class="secondary" data-structure-kind="${k}" data-structure-id="${esc(x.id)}" aria-label="${esc(x.name)} bearbeiten oder verschieben">Bearbeiten${k === "networks" ? "" : " / Verschieben"}</button><button class="danger" data-structure-delete-kind="${k}" data-structure-id="${esc(x.id)}" aria-label="${esc(x.name)} löschen">Löschen</button></div>`,
+              )
+              .join("")}</section>`,
+        )
+        .join(
+          "",
+        )}<p id="structure-no-results" role="status" hidden>Keine passenden Einträge. Versuche einen anderen Namen oder Wärmeverbund.</p></div>`,
     );
+    $("#structure-search").oninput = (event) => {
+      const term = event.target.value.trim().toLocaleLowerCase("de-CH");
+      let matches = 0;
+      document.querySelectorAll("[data-structure-search]").forEach((row) => {
+        row.hidden = !row.dataset.structureSearch
+          .toLocaleLowerCase("de-CH")
+          .includes(term);
+        if (!row.hidden) matches++;
+      });
+      $("#structure-no-results").hidden = !term || matches > 0;
+    };
     document
       .querySelectorAll("[data-structure-add]")
       .forEach((b) => (b.onclick = () => form(b.dataset.structureAdd)));

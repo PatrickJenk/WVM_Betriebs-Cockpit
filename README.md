@@ -6,6 +6,7 @@ Node.js mindestens 22.16; keine separate Datenbankinstallation, kein Docker und 
 
 - [ANLEITUNG.md](ANLEITUNG.md): Bedienung und lokale Tests.
 - [ERWEITERN.md](ERWEITERN.md): Codeübersicht und Erweiterungen.
+- [UEBERGABE.md](UEBERGABE.md): Selbstverwaltung, Zuständigkeiten und Übergabeprüfung.
 - [INFOMANIAK.md](INFOMANIAK.md): Sicherheit, Sicherungen und spätere Hosting-Einrichtung.
 
 Anmeldung und Rechte werden am Server geprüft. Daten liegen in `storage/cockpit.sqlite`,

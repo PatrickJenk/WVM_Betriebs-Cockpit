@@ -2113,3 +2113,108 @@ textarea {
   opacity: 0.4;
   cursor: default;
 }
+
+/* Gemeinsame Selbstverwaltung */
+.management-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.management-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  padding: 20px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #1e293b;
+  white-space: normal;
+  line-height: 1.5;
+}
+.management-card:hover {
+  background: #eef5ff;
+  border-color: #517eae;
+}
+.management-card strong {
+  font-size: 16px;
+}
+.management-card span,
+.structure-location {
+  font-size: 13px;
+  color: #526176;
+}
+.management-section {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #dce3ec;
+}
+.management-section-heading,
+.management-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.management-section-heading {
+  justify-content: space-between;
+}
+.management-actions {
+  margin-top: 12px;
+}
+.management-hint {
+  padding: 12px 16px;
+  border-left: 3px solid #4775a5;
+  background: #f0f6fc;
+  line-height: 1.6;
+}
+.management-help {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #dce3ec;
+  border-radius: 10px;
+  line-height: 1.6;
+}
+.management-help summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.management-help li {
+  margin-bottom: 8px;
+}
+.structure-location {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.structure-row strong {
+  overflow-wrap: anywhere;
+}
+.structure-row[hidden] {
+  display: none;
+}
+.management-body p {
+  line-height: 1.6;
+}
+.management-body button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.management-card:focus-visible,
+.management-help summary:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .management-grid {
+    grid-template-columns: 1fr;
+  }
+  .management-section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .structure-row > span {
+    flex-basis: 100%;
+  }
+}

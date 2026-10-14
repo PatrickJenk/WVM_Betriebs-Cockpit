@@ -6,7 +6,7 @@
   "description": "Lokale Demo für Wärmeverbund Marzili und ewb, ohne Docker",
   "scripts": {
     "start": "node --watch server.cjs",
-    "check": "node tests/smoke.cjs && node tests/structure.cjs && node tests/admin-folders.cjs && node tests/structure-http.cjs && node tests/documents.cjs && node tests/logbook.cjs && node tests/mentions.cjs && node tests/session-identity.cjs && node tests/http.cjs && node tests/shared.cjs && node tests/security.cjs",
+    "check": "node tests/smoke.cjs && node tests/management.cjs && node tests/structure.cjs && node tests/admin-folders.cjs && node tests/structure-http.cjs && node tests/documents.cjs && node tests/logbook.cjs && node tests/mentions.cjs && node tests/session-identity.cjs && node tests/http.cjs && node tests/shared.cjs && node tests/security.cjs",
     "format": "prettier --write src public tests server.cjs package.json .vscode",
     "start:lan": "node --watch server.cjs --lan",
     "start:production": "node --env-file-if-exists=.env.production server.cjs --production",

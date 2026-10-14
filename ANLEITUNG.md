@@ -1,5 +1,15 @@
 # Lokale Entwicklung und Bedienung
 
+## Selbstverwaltung für Admins
+
+Unten in der Seitenleiste öffnet **Cockpit verwalten** den gemeinsamen Einstieg für
+Navigation, Benutzer, Register und Anlagen. Für Register und Anlagen zuerst einen
+Standort auswählen. Die Seitenleiste dient der Navigation; die Verwaltung ist
+zentral unter **Cockpit verwalten** erreichbar.
+In **Navigation verwalten** lassen sich Namen und Zuordnungen durchsuchen.
+Kurze Erklärungen und die Hilfe zur Übergabe stehen direkt im Verwaltungsbereich.
+Die Checkliste für die verantwortlichen Personen steht in [UEBERGABE.md](UEBERGABE.md).
+
 ## Starten
 
 Node.js mindestens **22.16** verwenden. In VS Code den Projektordner mit `package.json`
@@ -112,13 +122,14 @@ Tests verwenden getrennte Daten. Tägliche Sicherungen entstehen automatisch im
 Datenverzeichnis; zusätzlich extern sichern. Wiederherstellung und Produktionsmodus:
 [INFOMANIAK.md](INFOMANIAK.md). Die lokale Demo bleibt zum Weiterentwickeln verfügbar.
 
-Admin-Erweiterungen: Über die **+**-Schaltflächen in der Navigation lassen sich Verbünde,
-Heizzentralen, Unterstationen und Unterkategorien anlegen. **Navigation verwalten** beim
-Admin-Profil dient zum Umbenennen und Verschieben über die Auswahl von Verbund und Kategorie.
-In einem Standort ergänzt **+ Register** weitere Dokumentbereiche, beispielsweise Arbeitsrapporte.
-Das Stiftsymbol direkt am Verbund, Standort, an einer Unterkategorie oder einem Register öffnet
-die Bearbeitung. Dort steht auch **Löschen** zur Verfügung. Die Sicherheitsabfrage nennt die
-betroffenen Standorte, Ordner, Dokumente, Anlagen und Logbucheinträge vor dem endgültigen Löschen.
+Admin-Erweiterungen: Unter **Cockpit verwalten** lassen sich über
+**Verbünde & Standorte** Wärmeverbünde, Heizzentralen, Unterstationen und
+Unterkategorien anlegen, umbenennen und verschieben. Zum Verwalten von Registern
+oder Anlagen im Cockpit-Verwaltungsbereich zuerst den Standort auswählen.
+In einem Standort ergänzt **+ Register** weitere Dokumentbereiche, beispielsweise
+Arbeitsrapporte. Das Stiftsymbol am Register öffnet dessen Bearbeitung.
+Beim Löschen nennt die Sicherheitsabfrage die betroffenen Inhalte vor dem
+endgültigen Löschen.
 **Register verwalten** erlaubt mit den Pfeilen die Reihenfolge zu ändern; im Bearbeitungsformular
 kann die Position auch direkt gewählt werden. Neue Register werden nach dem Speichern geöffnet.
 Die Standardregister Logbuch und Dokumente können umbenannt, verschoben oder ausgeblendet werden.

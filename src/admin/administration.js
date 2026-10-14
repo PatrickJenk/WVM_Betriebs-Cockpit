@@ -37,6 +37,10 @@ export function createAdministration({
     action();
     if (!save()) {
       Object.assign(data, before);
+      const error = document.querySelector("#admin-error, #plant-error");
+      if (error)
+        error.textContent =
+          "Speichern fehlgeschlagen. Bitte Eingaben prüfen. Bei gleichzeitigen Änderungen Eingaben sichern und die Ansicht neu laden.";
       return false;
     }
     render();
@@ -48,13 +52,14 @@ export function createAdministration({
     const folder = data.folders.find((f) => f.id === id),
       exclude = id ? [id, ...descendants(id)] : [];
     show(
-      `<form id="folder-form"><div class="modal-heading"><h2>${folder ? "Ordner bearbeiten" : "Neuer Ordner"}</h2><button type="button" class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><label>Ordnername<input name="folderName" required maxlength="100" value="${esc(folder?.name || "")}"></label><label>Übergeordneter Ordner<select name="parentId"><option value="">Dokumentenablage</option>${options(
+      `<form id="folder-form"><div class="modal-heading"><h2>${folder ? "Ordner bearbeiten" : "Neuer Ordner"}</h2><button type="button" class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><p class="management-hint">Ein Ordner gliedert diesen Dokumentbereich. Zum Verschieben wählst du einen anderen übergeordneten Ordner. Enthaltene Dateien bleiben zugeordnet.</p><label>Ordnername<input name="folderName" required maxlength="100" value="${esc(folder?.name || "")}"></label><label>Übergeordneter Ordner<select name="parentId"><option value="">Dokumentenablage</option>${options(
         folders(sid)
           .filter((f) => !exclude.includes(f.id))
           .map((f) => [f.id, path(f.id)]),
         folder?.parentId || parentId,
-      )}</select></label><p id="admin-error" role="alert"></p></div><div class="modal-footer"><button class="primary">Speichern</button></div></form>`,
+      )}</select></label><p id="admin-error" role="alert"></p></div><div class="modal-footer"><button type="button" class="secondary" id="folder-cancel-edit">Abbrechen</button><button class="primary">Speichern</button></div></form>`,
     );
+    document.querySelector("#folder-cancel-edit").onclick = () => modal.close();
     document.querySelector("#folder-form").onsubmit = (e) => {
       e.preventDefault();
       const f = e.currentTarget,
@@ -121,7 +126,7 @@ export function createAdministration({
   function plantForm(sid) {
     if (!isAdmin()) return;
     show(
-      `<div class="modal-heading"><div><h2>Anlagen verwalten</h2><p>Nur aktive Anlagen stehen für neue Einträge zur Auswahl.</p></div><button class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><form id="plant-add" class="plant-add"><label>Anlagenname<input name="plantName" placeholder="Zum Beispiel: Holzkessel 1" required maxlength="100"></label><button class="primary">Hinzufügen</button></form><div class="plant-list">${data.plants
+      `<div class="modal-heading"><div><h2>Anlagen verwalten</h2><p>${esc(data.structure?.sites?.find(s => s.id === sid)?.name || "Standort")}</p><p>Nur aktive Anlagen stehen für neue Einträge zur Auswahl.</p></div><button class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><form id="plant-add" class="plant-add"><label>Anlagenname<input name="plantName" placeholder="Zum Beispiel: Holzkessel 1" required maxlength="100"></label><button class="primary">Hinzufügen</button></form><div class="plant-list">${data.plants
         .filter((p) => p.siteId === sid && !p.deleted)
         .map(
           (p) =>
