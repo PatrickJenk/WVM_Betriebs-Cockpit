@@ -40,6 +40,10 @@ function backup(label = "manual") {
       "audit.json",
       JSON.stringify(store.db.prepare("SELECT * FROM audit").all()),
     );
+    write(
+      "mention_reads.json",
+      JSON.stringify(store.db.prepare("SELECT * FROM mention_reads").all()),
+    );
     write("secret.key", fs.readFileSync(path.join(store.root, "secret.key")));
     const references = new Set(
       [

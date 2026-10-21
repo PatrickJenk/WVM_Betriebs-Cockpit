@@ -19,7 +19,7 @@ try {
   if (manifest.version !== 1) throw Error("Unbekanntes Sicherungsformat.");
   for (const [name, hash] of Object.entries(manifest.files)) {
     if (
-      !/^(state\.json|uploads\.json|audit\.json|secret\.key|files\/[a-zA-Z0-9-]{1,100})$/.test(
+      !/^(state\.json|uploads\.json|audit\.json|mention_reads\.json|secret\.key|files\/[a-zA-Z0-9-]{1,100})$/.test(
         name,
       )
     )
@@ -51,6 +51,13 @@ try {
       store.db
         .prepare("INSERT INTO audit VALUES(?,?,?,?,?)")
         .run(row.id, row.at, row.actor, row.action, row.details);
+    if (manifest.files["mention_reads.json"])
+      for (const row of JSON.parse(
+        fs.readFileSync(path.join(target, "mention_reads.json"), "utf8"),
+      ))
+        store.db
+          .prepare("INSERT INTO mention_reads VALUES(?,?)")
+          .run(row.user_id, row.entry_id);
     store.audit(null, "backup.restored", { revision: manifest.revision });
   });
   console.log("Wiederhergestellt. Alle Benutzer müssen sich neu anmelden.");

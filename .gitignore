@@ -8,3 +8,5 @@ server-*.error.log
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+hosting-data/
+output/infomaniak/

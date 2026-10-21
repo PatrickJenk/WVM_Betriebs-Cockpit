@@ -232,6 +232,14 @@ function shell() {
     );
   if ($("#own-password-button"))
     $("#own-password-button").onclick = accounts.ownPassword;
+  if (isAdministrator(user) && user.hostingPasswordChangeRequired) {
+    $(".topbar").insertAdjacentHTML?.(
+      "afterend",
+      '<aside class="hosting-password-notice" role="status">Bitte ändere das Passwort von WVM-admin vor der Online-Freigabe. Verwende ein neues Passwort mit mindestens 12, besser 20 Zeichen. <button id="hosting-change-password" class="secondary">Passwort ändern</button></aside>',
+    );
+    if ($("#hosting-change-password"))
+      $("#hosting-change-password").onclick = accounts.ownPassword;
+  }
   if ($("#manage-cockpit"))
     $("#manage-cockpit").onclick = () =>
       createManagement({ ...context, structure, accounts, admin }).open();

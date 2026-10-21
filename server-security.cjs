@@ -514,6 +514,10 @@ function preflight(matches) {
       "Produktion: zuerst bestehende Daten in COCKPIT_DATA_DIR übernehmen.",
     );
   for (const u of state.data.users.filter((u) => u.active !== false)) {
+    if (u.hostingPasswordChangeRequired)
+      throw Error(
+        "Produktion: Bitte das Passwort von WVM-admin vor der Freigabe ändern oder das vorbereitete Infomaniak-Erstinstallationspaket verwenden.",
+      );
     if (["9876", "ChangeMe123"].some((p) => matches(p, u.passwordHash)))
       throw Error(
         "Produktion: unsicheres Passwort bei " +

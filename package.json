@@ -9,7 +9,10 @@
     "check": "node tests/smoke.cjs && node tests/management.cjs && node tests/structure.cjs && node tests/admin-folders.cjs && node tests/structure-http.cjs && node tests/documents.cjs && node tests/logbook.cjs && node tests/mentions.cjs && node tests/session-identity.cjs && node tests/http.cjs && node tests/shared.cjs && node tests/security.cjs",
     "format": "prettier --write src public tests server.cjs package.json .vscode",
     "start:lan": "node --watch server.cjs --lan",
-    "start:production": "node --env-file-if-exists=.env.production server.cjs --production",
+    "start:production": "node --env-file-if-exists=.env.production server-hosting.cjs",
+    "hosting:package": "node tools/package-infomaniak.cjs",
+    "check:hosting": "node tests/hosting.cjs",
+    "check:hosting:scanner": "node tests/hosting-scanner.cjs",
     "backup": "node tools/backup.cjs",
     "check:security": "node tests/security.cjs"
   },

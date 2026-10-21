@@ -2194,6 +2194,18 @@ textarea {
 .structure-row[hidden] {
   display: none;
 }
+.hosting-password-notice {
+  margin: 16px 24px 0;
+  padding: 16px;
+  border: 1px solid #d6a239;
+  border-radius: 10px;
+  background: #fff6dc;
+  color: #63470c;
+  line-height: 1.6;
+}
+.hosting-password-notice button {
+  margin: 8px 0 0 12px;
+}
 .management-body p {
   line-height: 1.6;
 }

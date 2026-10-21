@@ -635,6 +635,17 @@ module.exports = async function api(req, res) {
       requireUser(user, true);
       const input = JSON.parse((await body(req, 1024 * 1024)).toString());
       security.passwordPolicy(input.password);
+      if (user.hostingPasswordChangeRequired && input.password.length < 12)
+        throw security.error(
+          "Für das Hosting mindestens 12 Zeichen verwenden; empfohlen sind 20 Zeichen.",
+        );
+      if (
+        user.hostingPasswordChangeRequired &&
+        matches(input.password, user.passwordHash)
+      )
+        throw security.error(
+          "Bitte ein neues, anderes Admin-Passwort festlegen.",
+        );
       if (
         !user.mustChangePassword &&
         !matches(String(input.currentPassword || ""), user.passwordHash)
@@ -648,6 +659,7 @@ module.exports = async function api(req, res) {
         target.passwordHash = hash(input.password);
         target.passwordPolicyMinimum = input.password.length >= 12 ? 12 : 8;
         target.mustChangePassword = false;
+        target.hostingPasswordChangeRequired = false;
         latest.revision++;
         persist(latest);
         security.revoke(target.id);
@@ -871,6 +883,9 @@ module.exports = async function api(req, res) {
             mustChangePassword: u.password
               ? true
               : (old?.mustChangePassword ?? true),
+            ...(old?.hostingPasswordChangeRequired
+              ? { hostingPasswordChangeRequired: true }
+              : {}),
             passwordHash: u.password
               ? hash(u.password)
               : old?.passwordHash || hash("ChangeMe123"),

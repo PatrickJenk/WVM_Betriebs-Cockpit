@@ -1,5 +1,10 @@
 # Anmeldung ohne Zwei-Faktor-Pflicht
 
+Die neue Anleitung für ZIP-Erstinstallation, Passwortwechsel und Datenübernahme steht
+in **[INFOMANIAK-START.md](INFOMANIAK-START.md)**. Das neue vollständige Paket wird mit
+`npm run hosting:package` erzeugt. Die ältere ZIP-Datei unter `output/release` enthält
+diese Ersteinrichtung noch nicht und soll dafür nicht mehr verwendet werden.
+
 Auf Wunsch ist die Zwei-Faktor-Anmeldung deaktiviert (`COCKPIT_MFA_ENABLED=0`).
 Es werden weder Authenticator-App noch Mail- oder SMS-Dienst gebraucht.
 Der Admin sollte ein einzigartiges Passwort mit mindestens 20 Zeichen verwenden.
@@ -88,6 +93,11 @@ Offizielle Konfiguration (Port, Startbefehl, Node-Version und SSL):
 
 ## Grenzen, die zum Hosting gehören
 
+Das Infomaniak-Paket erlaubt ausdrücklich Uploads ohne Virenscanner
+(`COCKPIT_SCAN_MODE=disabled`). Anmeldung, Rechte, Dateiformat- und Speicherlimits
+bleiben aktiv. Eine automatische Malware-Prüfung entfällt. Die folgenden
+Scanner-Anforderungen gelten nur bei `COCKPIT_SCAN_MODE=required`:
+
 Die Anwendung prüft Dateiformate und unterstützt ClamAV über `COCKPIT_CLAMAV_HOST`
 und `COCKPIT_CLAMAV_PORT`. Im Produktionsmodus sind neue Uploads gesperrt, solange
 kein erreichbarer Scanner eingerichtet ist. Bei Scannerfehlern wird die Datei ebenfalls
@@ -122,4 +132,4 @@ Bei Infomaniak: Projektordner mit `package.json`, Installation `npm ci`, Start
 Kein zusätzlicher Build-Schritt ist für diese Anwendung erforderlich. Der Node-Prozess
 und sein Datenverzeichnis dürfen nicht öffentlich als statische Dateien erreichbar sein.
 Die öffentliche Freigabe erst nach Datenübernahme, Passwortwechseln, HTTPS-Konfiguration,
-Scanner-Einrichtung und erfolgreichem Test über die endgültige Domain vornehmen.
+erfolgreichem Test über die endgültige Domain vornehmen.
