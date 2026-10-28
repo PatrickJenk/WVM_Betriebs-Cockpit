@@ -73,7 +73,7 @@ export function createDocuments(context) {
       chain.unshift(ancestor);
       ancestor = folderAt(current, ancestor.parentId);
     }
-    return `<div class="panel-heading"><div><h2>Dokumentenablage</h2><p>Ordner öffnen, Dateien ablegen und per Doppelklick ansehen.</p></div><button class="primary" id="upload" ${folder ? "" : "disabled"}>${icon("upload")} Dateien hochladen</button></div><div class="search-row document-search"><label class="search">${icon("search")}<input id="doc-search" placeholder="Dateien und Ordner durchsuchen" aria-label="Dokumente durchsuchen" value="${esc(filters.search || "")}"></label></div><div class="file-explorer">${admin.folderView(current, filters.folder)}<div class="explorer-main"><nav class="explorer-breadcrumb" aria-label="Ordnerpfad"><button data-open-folder="all">${esc(site(current).name)}</button>${chain.map((f) => `<span>/</span><button data-open-folder="${esc(f.id)}">${esc(f.name)}</button>`).join("")}</nav><div class="explorer-folder-grid">${children.map((f) => `<button class="explorer-folder" data-open-folder="${esc(f.id)}" data-drop-folder="${esc(f.id)}"><span aria-hidden="true">📁</span><b>${esc(f.name)}</b><small>${data.documents.filter((d) => d.folderId === f.id).length} Dateien</small></button>`).join("")}</div>${folder ? `<div class="dropzone" id="dropzone" data-drop-folder="${esc(folder.id)}">${icon("upload")}<div><b>Dateien hier ablegen</b><p>${esc(admin.folderLabel(folder.id))} · Dateien werden direkt gespeichert</p></div></div>` : '<p class="folder-upload-hint">Dateien direkt auf einen Ordner ziehen oder einen Ordner zum Hochladen öffnen.</p>'}<div id="doc-rows">${docs.length ? `<div class="table-scroll"><table class="explorer-files"><thead><tr><th>NAME</th><th>ORDNER</th><th>TYP / GRÖSSE</th><th>ABGELEGT VON / DATUM</th><th>AKTIONEN</th></tr></thead><tbody>${docs.map((d) => `<tr draggable="${canDelete(d)}" ${canDelete(d) ? `data-drag-document="${esc(d.id)}"` : ""} data-open-document="${esc(d.id)}"><td><button class="doc-name" data-preview="${esc(d.id)}">${icon("file")}${esc(d.name)}</button></td><td>${esc(admin.folderLabel(d.folderId))}</td><td>${esc(d.fileType || "Datei")}<small>${size(d.fileSize)}</small></td><td><b>${esc(d.uploadedByName || data.users.find((u) => u.initials === d.uploadedBy)?.name || d.uploadedBy)}</b><small>${fmt(d.uploadedAt)}</small></td><td><div class="doc-actions"><button data-download="${esc(d.id)}">Download</button>${canDelete(d) ? `<button data-rename="${esc(d.id)}">Umbenennen / Verschieben</button><button data-delete="${esc(d.id)}" class="danger">Löschen</button>` : ""}</div></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty"><h3>Keine Dateien in dieser Ansicht</h3><p>Dateien auf einen Ordner oder die Ablagefläche ziehen.</p></div>'}</div></div></div>`;
+    return `<div class="panel-heading"><div><h2>Dokumentenablage</h2><p>Ordner öffnen, Dateien ablegen und per Doppelklick ansehen.</p></div><button class="primary" id="upload">${icon("upload")} Dateien hochladen</button></div><div class="search-row document-search"><label class="search">${icon("search")}<input id="doc-search" placeholder="Dateien und Ordner durchsuchen" aria-label="Dokumente durchsuchen" value="${esc(filters.search || "")}"></label></div><div class="file-explorer">${admin.folderView(current, filters.folder)}<div class="explorer-main"><nav class="explorer-breadcrumb" aria-label="Ordnerpfad"><button data-open-folder="all">${esc(site(current).name)}</button>${chain.map((f) => `<span>/</span><button data-open-folder="${esc(f.id)}">${esc(f.name)}</button>`).join("")}</nav><div class="explorer-folder-grid">${children.map((f) => `<button class="explorer-folder" data-open-folder="${esc(f.id)}" data-drop-folder="${esc(f.id)}"><span aria-hidden="true">📁</span><b>${esc(f.name)}</b><small>${data.documents.filter((d) => d.folderId === f.id).length} Dateien</small></button>`).join("")}</div>${folder ? `<div class="dropzone" id="dropzone" data-drop-folder="${esc(folder.id)}">${icon("upload")}<div><b>Dateien hier ablegen</b><p>${esc(admin.folderLabel(folder.id))} · Dateien werden direkt gespeichert</p></div></div>` : '<p class="folder-upload-hint">Dateien direkt auf einen Ordner ziehen oder einen Ordner zum Hochladen öffnen.</p>'}<div id="doc-rows">${docs.length ? `<div class="table-scroll"><table class="explorer-files"><thead><tr><th>NAME</th><th>ORDNER</th><th>TYP / GRÖSSE</th><th>ABGELEGT VON / DATUM</th><th>AKTIONEN</th></tr></thead><tbody>${docs.map((d) => `<tr draggable="${canDelete(d)}" ${canDelete(d) ? `data-drag-document="${esc(d.id)}"` : ""} data-open-document="${esc(d.id)}"><td><button class="doc-name" data-preview="${esc(d.id)}">${icon("file")}${esc(d.name)}</button></td><td>${esc(admin.folderLabel(d.folderId))}</td><td>${esc(d.fileType || "Datei")}<small>${size(d.fileSize)}</small></td><td><b>${esc(d.uploadedByName || data.users.find((u) => u.initials === d.uploadedBy)?.name || d.uploadedBy)}</b><small>${fmt(d.uploadedAt)}</small></td><td><div class="doc-actions"><button data-download="${esc(d.id)}">Download</button>${canDelete(d) ? `<button data-rename="${esc(d.id)}">Umbenennen / Verschieben</button><button data-delete="${esc(d.id)}" class="danger">Löschen</button>` : ""}</div></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty"><h3>Keine Dateien in dieser Ansicht</h3><p>Dateien auf einen Ordner oder die Ablagefläche ziehen.</p></div>'}</div></div></div>`;
   }
   function bindDocs() {
     const { current, filters } = getState();
@@ -169,24 +169,36 @@ export function createDocuments(context) {
       .forEach((b) => (b.onclick = () => removeDocument(b.dataset.delete)));
   }
   function uploadForm() {
-    const { current, filters } = getState();
-    if (!user.id || !folderAt(current, filters.folder)) {
-      toast("Bitte zuerst einen Ordner auswählen.");
+    const { current, filters, tab = "docs" } = getState();
+    if (!user.id) return;
+    const folders = data.folders.filter(
+      (f) => f.siteId === current && (f.sectionId || "docs") === tab,
+    );
+    if (!folders.length) {
+      toast("Bitte zuerst einen Ordner für die Dokumentenablage anlegen.");
       return;
     }
-    const targetFolder = filters.folder,
+    const targetFolder = folders.some((f) => f.id === filters.folder)
+        ? filters.folder
+        : folders.length === 1
+          ? folders[0].id
+          : "",
       uploadSite = current;
     show(
-      `<form id="upload-form"><div class="modal-heading"><h2>Dateien hochladen</h2><button type="button" class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><label>Dateien<input name="files" type="file" multiple required></label><p><b>Ordner:</b> ${esc(getAdmin().folderLabel(targetFolder))}</p><p>${esc(site(current).name)} · Abgelegt von ${esc(user.name)}</p></div><div class="modal-footer"><button type="submit" class="primary">Hochladen</button></div></form>`,
+      `<form id="upload-form"><div class="modal-heading"><h2>Dateien hochladen</h2><button type="button" class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><label>Dateien<input name="files" type="file" multiple required></label><label>Ordner<select name="folderId" required>${getAdmin().folderOptions(current, targetFolder)}</select></label><p>${esc(site(current).name)} · Abgelegt von ${esc(user.name)}</p></div><div class="modal-footer"><button type="submit" class="primary">Hochladen</button></div></form>`,
     );
     $("#upload-form").onsubmit = async (event) => {
       event.preventDefault();
       const form = event.currentTarget,
         button = form.querySelector("[type=submit]");
+      if (!folders.some((f) => f.id === form.elements.folderId.value)) {
+        toast("Bitte einen Zielordner auswählen.");
+        return;
+      }
       button.disabled = true;
       const success = await storeFiles(
         Array.from(form.elements.files.files),
-        targetFolder,
+        form.elements.folderId.value,
         uploadSite,
       );
       if (success) modal.close();
@@ -231,6 +243,15 @@ export function createDocuments(context) {
       }
       data.documents.push(...added);
       if (!save()) throw Error("Metadata could not be saved");
+      const state = getState();
+      if (
+        state.current === uploadSite &&
+        (state.tab || "docs") ===
+          (folderAt(uploadSite, targetFolder).sectionId || "docs")
+      ) {
+        state.filters.folder = targetFolder;
+        state.filters.search = "";
+      }
       render();
       toast(files.length + " Dateien gespeichert.");
       return true;

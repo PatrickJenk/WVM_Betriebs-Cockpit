@@ -76,13 +76,18 @@ const assert = require("node:assert/strict");
         }),
       });
       api.bindDocs();
+      state.filters.folder = undefined;
+      assert.ok(!api.documentsView().includes('id="upload" disabled'));
+      node("#upload").onclick();
+      assert.ok(html.includes('name="folderId"'));
+      state.filters.folder = "folder";
       node("#upload").onclick();
       assert.ok(html.includes(sid)); // Regression: site() fehlte im Uploadformular.
       const file = { name: "Schema.pdf", type: "application/pdf", size: 123 };
       await node("#upload-form").onsubmit({
         preventDefault() {},
         currentTarget: {
-          elements: { files: { files: [file] } },
+          elements: { files: { files: [file] }, folderId: { value: "folder" } },
           querySelector: () => node("button"),
         },
       });

@@ -194,7 +194,8 @@ const fs = require("node:fs"),
   assert.equal(vm.runInContext("tab", context), addedTab.id);
   assert.ok(node("#content").innerHTML.includes("Arbeitsrapporte"));
   vm.runInContext("tab='docs';filters={};render()", context);
-  assert.match(node("#content").innerHTML, /id="upload" disabled/);
+  assert.match(node("#content").innerHTML, /id="upload">/);
+  assert.doesNotMatch(node("#content").innerHTML, /id="upload" disabled/);
   assert.ok(!node("#content").innerHTML.includes('data-folder="unfiled"'));
   vm.runInContext(
     "data.folders.push({id:'folder',siteId:'eiger',name:'Schemas',parentId:null});filters.folder='folder';render()",
@@ -212,7 +213,7 @@ const fs = require("node:fs"),
   assert.ok(!node("#content").innerHTML.includes('id="new-section"'));
   assert.ok(!node("#content").innerHTML.includes("data-edit-section="));
   assert.ok(!node("#app").innerHTML.includes("data-structure-kind="));
-  assert.ok(node("#content").innerHTML.includes('id="upload" >'));
+  assert.ok(node("#content").innerHTML.includes('id="upload">'));
   vm.runInContext("accounts.logout()", context);
   assert.match(node("#app").innerHTML, /login-form/);
   assert.equal(session.get("cockpit-account"), "signed-out");
