@@ -1,4 +1,5 @@
-﻿import { uuid } from "../services/ids.js";
+import { canLead, isAdministrator } from "../auth/roles.js";
+import { uuid } from "../services/ids.js";
 import {
   siteTabs,
   structureImpact,
@@ -17,8 +18,9 @@ export function createStructure(c) {
     shell,
     toast,
     onStructureChange,
+    getAdmin,
   } = c;
-  const admin = () => ["Admin", "Administrator"].includes(user.role);
+  const admin = () => isAdministrator(user);
   const titles = {
     networks: "Wärmeverbund",
     sites: "Standort",
@@ -69,7 +71,7 @@ export function createStructure(c) {
       data.structure.sections.push({ ...value, id: uuid(), ...changes });
     }
   }
-  function form(kind, id, preset = {}) {
+  function form(kind, id, preset = {}, back) {
     if (!admin() || !titles[kind]) return;
     const item =
       kind === "sections"
@@ -131,9 +133,10 @@ export function createStructure(c) {
           : ""
       }<p id="structure-error" role="alert"></p></div><div class="modal-footer">${item ? '<button type="button" class="danger-button" id="structure-delete">Löschen</button>' : ""}<button class="secondary" type="button" id="structure-back">Abbrechen</button><button class="primary" type="submit">${item ? "Änderungen speichern" : titles[kind] + " hinzufügen"}</button></div></form>`,
     );
-    $("#structure-back").onclick = () => modal.close();
+    $("#structure-back").onclick = back || (() => modal.close());
     if ($("#structure-delete"))
-      $("#structure-delete").onclick = () => remove(kind, item.id, sectionSite);
+      $("#structure-delete").onclick = () =>
+        remove(kind, item.id, sectionSite, () => form(kind, id, preset, back));
     const formNode = $("#structure-form"),
       elements = formNode.elements;
     if (elements?.network)
@@ -259,7 +262,7 @@ export function createStructure(c) {
       );
     };
   }
-  function remove(kind, id, siteId) {
+  function remove(kind, id, siteId, back) {
     if (!admin()) return;
     const item =
       kind === "sections"
@@ -270,11 +273,11 @@ export function createStructure(c) {
       builtin = kind === "sections" && item.builtin;
     const details = builtin
       ? "<p>Das Standardregister wird ausgeblendet. Seine Logbucheinträge beziehungsweise Dokumente bleiben erhalten. Über «Register verwalten» kann es wieder eingeblendet werden.</p>"
-      : `<p>Folgende Inhalte werden ebenfalls dauerhaft gelöscht:</p><ul><li>${impact.sites.size} Standorte, ${impact.groups.size} Unterkategorien</li><li>${impact.sections.size} gespeicherte Register, ${impact.folders.size} Ordner</li><li>${impact.documents.length} Dokumente, ${impact.entries.length} Logbucheinträge</li><li>${impact.plants.length} Anlagen, ${impact.attachments.length} Logbuchanhänge</li></ul>${impact.sites.size ? "<p>Die Standardregister der betroffenen Standorte entfallen ebenfalls.</p>" : ""}`;
+      : `<p>Folgende Inhalte werden ebenfalls dauerhaft gelöscht:</p><ul><li>Standorte, Unterkategorien</li><li>gespeicherte Register, Ordner</li><li>Dokumente, Logbucheinträge</li><li>Anlagen, Logbuchanhänge</li></ul>${impact.sites.size ? "<p>Die Standardregister der betroffenen Standorte entfallen ebenfalls.</p>" : ""}`;
     show(
       `<div class="modal-heading"><h2>${esc(titles[kind])} löschen?</h2><button class="close icon-button" aria-label="Schliessen">×</button></div><div class="form-body"><p>«${esc(item.name)}» ${builtin ? "ausblenden" : "dauerhaft löschen"}?</p>${details}<p id="structure-error" role="alert"></p></div><div class="modal-footer"><button class="secondary" id="structure-cancel">Abbrechen</button><button class="danger-button" id="structure-confirm-delete">${builtin ? "Register ausblenden" : "Endgültig löschen"}</button></div>`,
     );
-    $("#structure-cancel").onclick = () => modal.close();
+    $("#structure-cancel").onclick = back || (() => modal.close());
     $("#structure-confirm-delete").onclick = () =>
       commit(
         () => {
@@ -284,7 +287,7 @@ export function createStructure(c) {
         { kind, deleted: true, id: item.id, siteId: item.siteId },
       );
   }
-  function moveTab(siteId, key, direction) {
+  function moveTab(siteId, key, direction, back) {
     if (!admin()) return;
     const tabs = siteTabs(data, siteId),
       index = tabs.findIndex((t) => t.key === key),
@@ -296,34 +299,44 @@ export function createStructure(c) {
         kind: "order",
       })
     )
-      manageTabs(siteId);
+      manageTabs(siteId, back);
   }
-  function manageTabs(siteId) {
+  function manageTabs(siteId, back) {
     if (!admin()) return;
     const visible = siteTabs(data, siteId),
       all = siteTabs(data, siteId, true);
     show(
       `<div class="modal-heading"><h2>Register verwalten</h2><button class="close icon-button" aria-label="Schliessen">×</button></div><div class="form-body"><p class="management-hint">${esc(data.structure.sites.find((s) => s.id === siteId)?.name || "Standort")} · Register sind die Reiter innerhalb eines Standorts. Mit den Pfeilen änderst du ihre Reihenfolge.</p><button class="secondary" id="tab-add">+ Register hinzufügen</button>${all.map((t) => `<div class="structure-row"><span>${esc(t.name)}${t.hidden ? " · ausgeblendet" : ""}</span><button class="secondary" data-tab-edit="${esc(t.id)}" aria-label="Register bearbeiten: ${esc(t.name)}">${t.hidden ? "Wieder einblenden / Bearbeiten" : "Bearbeiten"}</button>${t.hidden ? "" : `<button class="secondary" data-tab-move="${esc(t.key)}" data-direction="-1" ${visible[0]?.key === t.key ? "disabled" : ""} aria-label="${esc(t.name)} nach links">←</button><button class="secondary" data-tab-move="${esc(t.key)}" data-direction="1" ${visible.at(-1)?.key === t.key ? "disabled" : ""} aria-label="${esc(t.name)} nach rechts">→</button><button class="danger" data-tab-delete="${esc(t.id)}" aria-label="Register ${t.builtin ? "ausblenden" : "löschen"}: ${esc(t.name)}">${t.builtin ? "Ausblenden" : "Löschen"}</button>`}</div>`).join("")}<p id="structure-error" role="alert"></p></div>`,
+      back,
     );
-    $("#tab-add").onclick = () => form("sections", null, { siteId });
+    const returnToTabs = () => manageTabs(siteId, back);
+    $("#tab-add").onclick = () =>
+      form("sections", null, { siteId }, returnToTabs);
     document
       .querySelectorAll("[data-tab-edit]")
       .forEach(
         (b) =>
-          (b.onclick = () => form("sections", b.dataset.tabEdit, { siteId })),
+          (b.onclick = () =>
+            form("sections", b.dataset.tabEdit, { siteId }, returnToTabs)),
       );
     document
       .querySelectorAll("[data-tab-delete]")
       .forEach(
         (b) =>
-          (b.onclick = () => remove("sections", b.dataset.tabDelete, siteId)),
+          (b.onclick = () =>
+            remove("sections", b.dataset.tabDelete, siteId, returnToTabs)),
       );
     document
       .querySelectorAll("[data-tab-move]")
       .forEach(
         (b) =>
           (b.onclick = () =>
-            moveTab(siteId, b.dataset.tabMove, Number(b.dataset.direction))),
+            moveTab(
+              siteId,
+              b.dataset.tabMove,
+              Number(b.dataset.direction),
+              back,
+            )),
       );
   }
   function locationLabel(kind, item) {
@@ -345,67 +358,141 @@ export function createStructure(c) {
     }
     return [...parts, ...groups].filter(Boolean).join(" / ");
   }
-  function manage() {
-    if (!admin()) return;
-    const labels = {
-      networks: "Wärmeverbünde",
-      sites: "Heizzentralen / Unterstationen",
-      groups: "Unterkategorien",
-    };
+  function navigationDialog(title, content, back) {
     show(
-      `<div class="modal-heading"><div><h2>Navigation verwalten</h2><p>Verbünde und Standorte anlegen, umbenennen oder verschieben.</p></div><button class="close icon-button" aria-label="Schliessen">×</button></div><div class="form-body"><label>Navigation durchsuchen<input id="structure-search" type="search" placeholder="Name, Wärmeverbund oder Unterkategorie"></label><p class="muted">Beim Bearbeiten eines Standorts kannst du seine Zuordnung ändern. Inhalte bleiben beim Verschieben zugeordnet.</p>${[
-        "networks",
-        "sites",
-        "groups",
-      ]
-        .map(
-          (k) =>
-            `<section class="management-section" data-structure-section><div class="management-section-heading"><h3>${labels[k]} <small>(${data.structure[k].length})</small></h3><button class="secondary" data-structure-add="${k}" ${k !== "networks" && !data.structure.networks.length ? "disabled" : ""}>+ ${titles[k]} hinzufügen</button></div>${!data.structure[k].length ? `<p class="muted">Noch keine Einträge. ${k !== "networks" && !data.structure.networks.length ? "Lege zuerst einen Wärmeverbund an." : "Über «Hinzufügen» legst du den ersten Eintrag an."}</p>` : ""}${[
-              ...data.structure[k],
-            ]
-              .sort((a, b) => a.name.localeCompare(b.name, "de-CH"))
-              .map(
-                (x) =>
-                  `<div class="structure-row" data-structure-search="${esc(x.name + " " + locationLabel(k, x))}"><span><strong>${esc(x.name)}</strong><small class="structure-location">${esc(locationLabel(k, x))}</small></span><button class="secondary" data-structure-kind="${k}" data-structure-id="${esc(x.id)}" aria-label="${esc(x.name)} bearbeiten oder verschieben">Bearbeiten${k === "networks" ? "" : " / Verschieben"}</button><button class="danger" data-structure-delete-kind="${k}" data-structure-id="${esc(x.id)}" aria-label="${esc(x.name)} löschen">Löschen</button></div>`,
-              )
-              .join("")}</section>`,
-        )
-        .join(
-          "",
-        )}<p id="structure-no-results" role="status" hidden>Keine passenden Einträge. Versuche einen anderen Namen oder Wärmeverbund.</p></div>`,
+      `<div class="modal-heading"><h2>${esc(title)}</h2><button type="button" class="close icon-button" aria-label="Schliessen">×</button></div><div class="form-body">${content}</div>`,
+      back,
     );
-    $("#structure-search").oninput = (event) => {
-      const term = event.target.value.trim().toLocaleLowerCase("de-CH");
-      let matches = 0;
-      document.querySelectorAll("[data-structure-search]").forEach((row) => {
-        row.hidden = !row.dataset.structureSearch
-          .toLocaleLowerCase("de-CH")
-          .includes(term);
-        if (!row.hidden) matches++;
-      });
-      $("#structure-no-results").hidden = !term || matches > 0;
-    };
-    document
-      .querySelectorAll("[data-structure-add]")
-      .forEach((b) => (b.onclick = () => form(b.dataset.structureAdd)));
-    bind();
+    document.querySelectorAll("[data-navigation-open]").forEach((link) => {
+      link.onclick = () => modal.close();
+    });
   }
-  function bind() {
-    document.querySelectorAll("[data-structure-kind]").forEach(
-      (b) =>
-        (b.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          form(b.dataset.structureKind, b.dataset.structureId);
-        }),
+  const card = (label, attributes) =>
+    `<button type="button" class="management-card" ${attributes}><strong>${esc(label)}</strong></button>`;
+  const pageLink = (label, href) =>
+    `<a class="management-card" href="${href}" data-navigation-open><strong>${esc(label)}</strong></a>`;
+  function manage(back) {
+    if (!admin()) return;
+    navigationDialog(
+      "Navigation verwalten",
+      `<div class="management-grid">
+      ${card("Betrieb", 'id="nav-admin-operations"')}
+      ${card("Wärmeverbünde", 'id="nav-admin-networks"')}
+      ${card("Betriebsführung", 'id="nav-admin-leadership"')}
+    </div>`,
+      back,
     );
-    document
-      .querySelectorAll("[data-structure-delete-kind]")
-      .forEach(
-        (b) =>
-          (b.onclick = () =>
-            remove(b.dataset.structureDeleteKind, b.dataset.structureId)),
+    const returnToAreas = () => manage(back);
+    $("#nav-admin-operations").onclick = () =>
+      navigationDialog(
+        "Betrieb",
+        `<div class="management-grid">${pageLink("Dashboard", "#dashboard")}${pageLink("Dokumentationen", "#documentation")}${pageLink("Betriebspersonal", "#personnel")}</div>`,
+        returnToAreas,
+      );
+    $("#nav-admin-networks").onclick = () => manageNetworks(returnToAreas);
+    $("#nav-admin-leadership").onclick = () =>
+      navigationDialog(
+        "Betriebsführung",
+        canLead(user)
+          ? `<div class="management-grid">${pageLink("Austausch EPC + WVM", "#leadership")}</div>`
+          : "<p>Für den Austausch EPC + WVM ist die Rolle Leitung erforderlich.</p>",
+        returnToAreas,
       );
   }
-  return { form, manage, remove, manageTabs, moveTab, bind };
+  function manageNetworks(back) {
+    if (!admin()) return;
+    navigationDialog(
+      "Wärmeverbünde",
+      `<div class="management-grid">
+      ${data.structure.networks.map((n) => card(n.name, `data-manage-network="${esc(n.id)}"`)).join("")}
+      <button type="button" class="secondary" id="add-network">+ Wärmeverbund hinzufügen</button>
+    </div>`,
+      back,
+    );
+    const returnToNetworks = () => manageNetworks(back);
+    $("#add-network").onclick = () =>
+      form("networks", null, {}, returnToNetworks);
+    document.querySelectorAll("[data-manage-network]").forEach((button) => {
+      button.onclick = () =>
+        manageNetwork(button.dataset.manageNetwork, returnToNetworks);
+    });
+  }
+  function manageNetwork(id, back) {
+    if (!admin()) return;
+    const network = data.structure.networks.find((n) => n.id === id);
+    if (!network) return back();
+    const { sites, groups } = data.structure;
+    const section = (title, substation) =>
+      `<section class="management-section"><div class="management-section-heading"><h3>${title}</h3><button type="button" class="secondary" data-add-station="${substation ? "mbus" : ""}">+ ${substation ? "Unterstation" : "Heizzentrale"} hinzufügen</button></div>
+      <div class="management-grid">${
+        sites
+          .filter(
+            (s) => s.heatNetworkId === id && Boolean(s.type) === substation,
+          )
+          .map((s) => card(s.name, `data-manage-site="${esc(s.id)}"`))
+          .join("") || "<p>Keine Standorte vorhanden.</p>"
+      }</div></section>`;
+    navigationDialog(
+      network.name,
+      `<button type="button" class="secondary" id="edit-network">Wärmeverbund bearbeiten</button>
+      ${section("Heizzentralen", false)}${section("Unterstationen", true)}
+      <section class="management-section"><div class="management-section-heading"><h3>Unterkategorien</h3><button type="button" class="secondary" id="add-network-group">+ Unterkategorie hinzufügen</button></div><div class="management-grid">
+      ${
+        groups
+          .filter((g) => g.networkId === id)
+          .map((g) =>
+            card(
+              locationLabel("groups", g) + " / " + g.name,
+              `data-manage-group="${esc(g.id)}"`,
+            ),
+          )
+          .join("") || "<p>Keine Unterkategorien vorhanden.</p>"
+      }</div></section>`,
+      back,
+    );
+    const returnToNetwork = () => manageNetwork(id, back);
+    $("#edit-network").onclick = () =>
+      form("networks", id, {}, returnToNetwork);
+    $("#add-network-group").onclick = () =>
+      form("groups", null, { networkId: id }, returnToNetwork);
+    document.querySelectorAll("[data-add-station]").forEach((button) => {
+      button.onclick = () =>
+        form(
+          "sites",
+          null,
+          { heatNetworkId: id, type: button.dataset.addStation },
+          returnToNetwork,
+        );
+    });
+    document.querySelectorAll("[data-manage-group]").forEach((button) => {
+      button.onclick = () =>
+        form("groups", button.dataset.manageGroup, {}, returnToNetwork);
+    });
+    document.querySelectorAll("[data-manage-site]").forEach((button) => {
+      button.onclick = () =>
+        manageSite(button.dataset.manageSite, returnToNetwork);
+    });
+  }
+  function manageSite(id, back) {
+    if (!admin()) return;
+    const site = data.structure.sites.find((s) => s.id === id);
+    if (!site) return back();
+    navigationDialog(
+      site.name,
+      `<div class="management-grid">
+      ${pageLink("Standort öffnen", "#site/" + encodeURIComponent(id))}
+      ${card("Standort bearbeiten", 'id="edit-station"')}
+      ${card("Register verwalten", 'id="manage-station-registers"')}
+      ${getAdmin ? card("Anlagen verwalten", 'id="manage-station-plants"') : ""}
+    </div>`,
+      back,
+    );
+    const returnToSite = () => manageSite(id, back);
+    $("#edit-station").onclick = () => form("sites", id, {}, returnToSite);
+    $("#manage-station-registers").onclick = () => manageTabs(id, returnToSite);
+    if (getAdmin)
+      $("#manage-station-plants").onclick = () =>
+        getAdmin().plants(id, returnToSite);
+  }
+  return { form, manage, remove, manageTabs, moveTab };
 }

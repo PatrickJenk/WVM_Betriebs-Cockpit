@@ -1,4 +1,5 @@
 node_modules/
+.npm-cache/
 storage/
 .env
 .env.*
@@ -10,3 +11,17 @@ server-*.error.log
 *.sqlite-shm
 hosting-data/
 output/infomaniak/
+# Local data, generated exports and optional document dependencies are not code.
+tmp/
+output/
+storage*/
+*.key
+*.pem
+*.p12
+*.pfx
+*.log
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+Thumbs.db

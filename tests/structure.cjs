@@ -75,7 +75,7 @@
   assert.equal(result.tab, reports.id);
   assert.deepEqual(
     siteTabs(data, sid).map((t) => t.name),
-    ["Logbuch", "Dokumente", "Arbeitsrapporte"],
+    ["Logbuch", "Dokumente", "Arbeitsrapporte", "Kontrollblatt"],
   );
   data.documents.push({
     id: "report-file",
@@ -87,33 +87,33 @@
   submit({ itemName: "Rapporte", position: "0" });
   assert.deepEqual(
     siteTabs(data, sid).map((t) => t.name),
-    ["Rapporte", "Logbuch", "Dokumente"],
+    ["Rapporte", "Logbuch", "Dokumente", "Kontrollblatt"],
   );
   assert.equal(data.documents[0].folderId, data.folders[0].id);
   api.moveTab(sid, reports.id, 1);
   assert.deepEqual(
     siteTabs(data, sid).map((t) => t.key),
-    ["log", reports.id, "docs"],
+    ["log", reports.id, "docs", "control-sheet"],
   );
   api.form("sections", "log", { siteId: sid });
   submit({ itemName: "Betriebslogbuch", position: "0" });
   assert.equal(siteTabs(data, sid)[0].name, "Betriebslogbuch");
   api.remove("sections", "docs", sid);
-  assert.equal(siteTabs(data, sid).length, 3);
+  assert.equal(siteTabs(data, sid).length, 4);
   node("#structure-cancel").onclick();
-  assert.equal(siteTabs(data, sid).length, 3);
+  assert.equal(siteTabs(data, sid).length, 4);
   api.remove("sections", "docs", sid);
   node("#structure-confirm-delete").onclick();
   assert.deepEqual(
     siteTabs(data, sid).map((t) => t.key),
-    ["log", reports.id],
+    ["log", reports.id, "control-sheet"],
   );
   assert.equal(data.documents.length, 1);
   api.form("sections", "docs", { siteId: sid });
   submit({ itemName: "Unterlagen", position: "1" });
   assert.deepEqual(
     siteTabs(data, sid).map((t) => t.name),
-    ["Betriebslogbuch", "Unterlagen", "Rapporte"],
+    ["Betriebslogbuch", "Unterlagen", "Rapporte", "Kontrollblatt"],
   );
   assert.equal(
     data.structure.sections.filter((s) => s.builtin === "docs").length,
@@ -132,6 +132,7 @@
   api.form("sites", sid);
   submit(fields("Neue Zentrale", child, "n", "mbus"));
   assert.equal(data.structure.sites[0].type, "mbus");
+  assert.ok(!siteTabs(data, sid).some((tab) => tab.key === "control-sheet"));
   assert.equal(data.structure.sites[0].groupId, child);
   api.form("networks");
   submit({ itemName: "Zweiter Verbund" });
@@ -158,7 +159,8 @@
   assert.equal(impact.documents.length, 1);
   assert.equal(impact.attachments.length, 1);
   api.remove("networks", n2);
-  assert.ok(html.includes("1 Dokumente, 1 Logbucheinträge"));
+  assert.ok(html.includes("Dokumente, Logbucheinträge"));
+  assert.doesNotMatch(html, /\d+ Dokumente/);
   assert.equal(data.structure.sites.length, 1);
   allow = false;
   node("#structure-confirm-delete").onclick();

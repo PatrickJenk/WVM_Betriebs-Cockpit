@@ -382,7 +382,7 @@ async function call(port, url, method = "GET", payload, token) {
     "Alter Text entfernt";
   assert.equal(
     (await call(4177, "/api/state", "PUT", replaced, admin)).status,
-    403,
+    200,
   );
   const statusUpdate = (
     await call(4177, "/api/state", "GET", undefined, member.token)

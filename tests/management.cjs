@@ -3,68 +3,118 @@ const assert = require("node:assert/strict");
 (async () => {
   const { createManagement } = await import("../src/admin/management.js");
   const nodes = new Map();
-  const node = (id) => {
-    if (!nodes.has(id)) nodes.set(id, { value: "" });
-    return nodes.get(id);
+  let markup = "";
+  const visits = [];
+  global.document = { getElementById: (id) => nodes.get(id) };
+  const visited = (name) => (back) => {
+    visits.push(name);
+    markup = name;
+    back();
   };
-  global.document = { getElementById: node };
-  const data = {
-    structure: {
-      networks: [{ id: "n", name: "Verbund" }],
-      sites: [{ id: "s", heatNetworkId: "n", name: "Zentrale <West>" }],
-    },
-  };
-  const before = JSON.stringify(data);
-  let shown = "",
-    calls = [];
   const config = {
     user: { role: "Admin" },
-    data,
-    esc: (value) =>
-      String(value).replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
-    show: (html) => {
-      shown = html;
+    show(html) {
+      markup = html;
+      nodes.clear();
+      for (const [, id] of html.matchAll(/id="(management-[^"]+)"/g))
+        nodes.set(id, {});
     },
-    modal: { close: () => calls.push("close") },
-    getState: () => ({ current: "s" }),
-    structure: {
-      manage: () => calls.push("navigation"),
-      manageTabs: (id) => calls.push(["tabs", id]),
+    structure: { manage: visited("navigation") },
+    collaboration: { can: (right) => right === "smtp", mail: visited("mail") },
+    accounts: {
+      manage(message, back) {
+        assert.equal(message, "");
+        visited("users")(back);
+      },
     },
-    accounts: { manage: () => calls.push("users") },
-    admin: { plants: (id) => calls.push(["plants", id]) },
   };
-  createManagement(config).open();
-  assert.match(shown, /Zentrale &lt;West&gt;/);
-  assert.match(shown, /value="s" selected/);
-  assert.equal(node("management-tabs").disabled, true);
-  node("management-tabs").onclick();
-  assert.deepEqual(calls, []);
-  node("management-site").value = "s";
-  node("management-site").onchange();
-  assert.equal(node("management-tabs").disabled, false);
-  node("management-tabs").onclick();
-  node("management-plants").onclick();
-  node("management-navigation").onclick();
-  node("management-users").onclick();
-  node("management-close").onclick();
-  assert.deepEqual(calls, [
-    ["tabs", "s"],
-    ["plants", "s"],
-    "navigation",
-    "users",
-    "close",
-  ]);
-  assert.equal(
-    JSON.stringify(data),
-    before,
-    "Opening and navigating must not change stored content",
+
+  const management = createManagement(config);
+  management.open();
+  assert.deepEqual(
+    [...nodes.keys()],
+    ["management-navigation", "management-mail", "management-users"],
   );
-  shown = "";
+  assert.doesNotMatch(markup, /Standort auswählen|Übergabe|Benutzerhandbuch/);
+  for (const link of ["navigation", "mail", "users"]) {
+    nodes.get("management-" + link).onclick();
+    assert.match(markup, /Cockpit verwalten/);
+  }
+  assert.deepEqual(visits, ["navigation", "mail", "users"]);
+
+  createManagement({
+    ...config,
+    collaboration: { ...config.collaboration, can: () => false },
+  }).open();
+  assert.equal(nodes.has("management-mail"), false);
+
+  markup = "";
   createManagement({ ...config, user: { role: "EPC" } }).open();
-  assert.equal(shown, "", "Only administrators may open management");
+  assert.equal(markup, "");
+
+  const { parseHTML } = require("linkedom");
+  const { createStructure } = await import("../src/admin/structure.js");
+  const { document: page } = parseHTML("<div id='dialog'></div>");
+  global.document = page;
+  const dialog = page.getElementById("dialog");
+  let back;
+  const structure = createStructure({
+    data: {
+      structure: {
+        networks: [
+          { id: "a", name: "Verbund A" },
+          { id: "b", name: "Verbund B" },
+        ],
+        sites: [
+          { id: "heat", name: "Heizzentrale A", heatNetworkId: "a" },
+          {
+            id: "sub",
+            name: "Unterstation A",
+            heatNetworkId: "a",
+            type: "mbus",
+          },
+          { id: "other", name: "Standort B", heatNetworkId: "b" },
+        ],
+        groups: [],
+        sections: [],
+      },
+    },
+    user: { role: "Admin", leadership: true },
+    esc: String,
+    modal: { close() {} },
+    show(html, goBack) {
+      dialog.innerHTML = html;
+      back = goBack;
+    },
+  });
+  const click = (selector) => page.querySelector(selector).click();
+  structure.manage();
+  assert.doesNotMatch(dialog.textContent, /Verbund A|Standort B/);
+  click("#nav-admin-operations");
+  assert.deepEqual(
+    [...page.querySelectorAll("[data-navigation-open]")].map((link) =>
+      link.getAttribute("href"),
+    ),
+    ["#dashboard", "#documentation", "#personnel"],
+  );
+  back();
+  click("#nav-admin-leadership");
+  assert.match(dialog.textContent, /Austausch EPC \+ WVM/);
+  back();
+  click("#nav-admin-networks");
+  assert.match(dialog.textContent, /Verbund A/);
+  assert.doesNotMatch(dialog.textContent, /Standort B/);
+  click('[data-manage-network="a"]');
+  assert.match(dialog.textContent, /Heizzentrale A[\s\S]*Unterstation A/);
+  assert.doesNotMatch(dialog.textContent, /Standort B/);
+  click('[data-manage-site="sub"]');
+  assert.match(dialog.textContent, /Unterstation A/);
+  click("#manage-station-registers");
+  assert.match(dialog.textContent, /Register verwalten/);
+  back();
+  assert.match(dialog.textContent, /Standort bearbeiten/);
   console.log(
-    "Passed: management permissions, escaped labels, location selection, action routing and unchanged data.",
+    "Passed: management shortcuts, return navigation and SMTP permissions.",
   );
 })().catch((error) => {
   console.error(error);

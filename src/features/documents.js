@@ -1,5 +1,6 @@
 import { isAdministrator } from "../auth/accounts.js";
 import { uuid } from "../services/ids.js";
+import { generalDocumentationId } from "../services/structure.js";
 // Explorer: Ordner, direkte Uploads, Vorschau und Dateiverwaltung.
 export function createDocuments(context) {
   const {
@@ -23,7 +24,9 @@ export function createDocuments(context) {
   } = context;
   const canDelete = (d) =>
     isAdministrator(user) ||
-    (!["Admin", "Administrator"].includes(d.uploadedByRole) &&
+    (!d.controlRun &&
+      d.siteId !== generalDocumentationId &&
+      !["Admin", "Administrator"].includes(d.uploadedByRole) &&
       d.uploadedById !== "admin" &&
       d.uploadedByName !== "WVM-admin" &&
       d.uploadedBy !== "ADM" &&
@@ -37,6 +40,54 @@ export function createDocuments(context) {
     n < 1024 * 1024
       ? (n / 1024).toFixed(1) + " KB"
       : (n / 1024 / 1024).toFixed(1) + " MB";
+  function generalView() {
+    const docs = data.documents
+      .filter((d) => d.siteId === generalDocumentationId)
+      .sort((a, b) => a.name.localeCompare(b.name, "de-CH"));
+    const details = (name, type) =>
+      `<span class="documentation-card-type">${icon("file")} ${esc(type)}</span><strong>${esc(name)}</strong>`;
+    return `<div class="page-heading"><h1>Dokumentationen</h1>${isAdministrator(user) ? '<button class="primary" id="general-upload">+ Dokumente hinzufügen</button>' : ""}</div>
+      <div class="documentation-grid">
+        <article class="documentation-card">
+          <a class="documentation-card-open" href="/api/handbook" target="_blank" rel="noopener noreferrer">${details("Benutzerhandbuch", "PDF")}</a>
+          <div class="documentation-card-actions"><a class="secondary" href="/api/handbook?download=1">Herunterladen</a></div>
+        </article>
+        ${docs
+          .map((doc) => {
+            const id = esc(doc.id);
+            const pdf = doc.mimeType === "application/pdf";
+            const content = details(
+              doc.name,
+              pdf ? "PDF" : doc.fileType || "Datei",
+            );
+            return `<article class="documentation-card">
+            ${pdf ? `<a class="documentation-card-open" href="/api/files/${encodeURIComponent(doc.id)}?inline=1" target="_blank" rel="noopener noreferrer">${content}</a>` : `<button type="button" class="documentation-card-open" data-general-preview="${id}">${content}</button>`}
+            <div class="documentation-card-actions">
+              <button type="button" class="secondary" data-general-download="${id}">Herunterladen</button>
+              ${isAdministrator(user) ? `<button type="button" class="danger-button" data-general-delete="${id}" aria-label="Löschen: ${esc(doc.name)}">Löschen</button>` : ""}
+            </div>
+          </article>`;
+          })
+          .join("")}
+      </div>`;
+  }
+  function bindGeneral() {
+    if ($("#general-upload")) $("#general-upload").onclick = uploadForm;
+    document.querySelectorAll("[data-general-preview]").forEach((button) => {
+      button.onclick = () => preview(button.dataset.generalPreview);
+    });
+    document.querySelectorAll("[data-general-download]").forEach((button) => {
+      button.onclick = () => {
+        const doc = data.documents.find(
+          (d) => d.id === button.dataset.generalDownload,
+        );
+        if (doc) download(doc.id, doc.name);
+      };
+    });
+    document.querySelectorAll("[data-general-delete]").forEach((button) => {
+      button.onclick = () => removeDocument(button.dataset.generalDelete);
+    });
+  }
   function documentsView() {
     const { current, filters, tab = "docs" } = getState(),
       admin = getAdmin(),
@@ -73,7 +124,7 @@ export function createDocuments(context) {
       chain.unshift(ancestor);
       ancestor = folderAt(current, ancestor.parentId);
     }
-    return `<div class="panel-heading"><div><h2>Dokumentenablage</h2><p>Ordner öffnen, Dateien ablegen und per Doppelklick ansehen.</p></div><button class="primary" id="upload">${icon("upload")} Dateien hochladen</button></div><div class="search-row document-search"><label class="search">${icon("search")}<input id="doc-search" placeholder="Dateien und Ordner durchsuchen" aria-label="Dokumente durchsuchen" value="${esc(filters.search || "")}"></label></div><div class="file-explorer">${admin.folderView(current, filters.folder)}<div class="explorer-main"><nav class="explorer-breadcrumb" aria-label="Ordnerpfad"><button data-open-folder="all">${esc(site(current).name)}</button>${chain.map((f) => `<span>/</span><button data-open-folder="${esc(f.id)}">${esc(f.name)}</button>`).join("")}</nav><div class="explorer-folder-grid">${children.map((f) => `<button class="explorer-folder" data-open-folder="${esc(f.id)}" data-drop-folder="${esc(f.id)}"><span aria-hidden="true">📁</span><b>${esc(f.name)}</b><small>${data.documents.filter((d) => d.folderId === f.id).length} Dateien</small></button>`).join("")}</div>${folder ? `<div class="dropzone" id="dropzone" data-drop-folder="${esc(folder.id)}">${icon("upload")}<div><b>Dateien hier ablegen</b><p>${esc(admin.folderLabel(folder.id))} · Dateien werden direkt gespeichert</p></div></div>` : '<p class="folder-upload-hint">Dateien direkt auf einen Ordner ziehen oder einen Ordner zum Hochladen öffnen.</p>'}<div id="doc-rows">${docs.length ? `<div class="table-scroll"><table class="explorer-files"><thead><tr><th>NAME</th><th>ORDNER</th><th>TYP / GRÖSSE</th><th>ABGELEGT VON / DATUM</th><th>AKTIONEN</th></tr></thead><tbody>${docs.map((d) => `<tr draggable="${canDelete(d)}" ${canDelete(d) ? `data-drag-document="${esc(d.id)}"` : ""} data-open-document="${esc(d.id)}"><td><button class="doc-name" data-preview="${esc(d.id)}">${icon("file")}${esc(d.name)}</button></td><td>${esc(admin.folderLabel(d.folderId))}</td><td>${esc(d.fileType || "Datei")}<small>${size(d.fileSize)}</small></td><td><b>${esc(d.uploadedByName || data.users.find((u) => u.initials === d.uploadedBy)?.name || d.uploadedBy)}</b><small>${fmt(d.uploadedAt)}</small></td><td><div class="doc-actions"><button data-download="${esc(d.id)}">Download</button>${canDelete(d) ? `<button data-rename="${esc(d.id)}">Umbenennen / Verschieben</button><button data-delete="${esc(d.id)}" class="danger">Löschen</button>` : ""}</div></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty"><h3>Keine Dateien in dieser Ansicht</h3><p>Dateien auf einen Ordner oder die Ablagefläche ziehen.</p></div>'}</div></div></div>`;
+    return `<div class="panel-heading"><div><h2>Dokumentenablage</h2><p>Ordner öffnen, Dateien ablegen und per Doppelklick ansehen.</p></div><button class="primary" id="upload">${icon("upload")} Dateien hochladen</button></div><div class="search-row document-search"><label class="search">${icon("search")}<input id="doc-search" placeholder="Dateien und Ordner durchsuchen" aria-label="Dokumente durchsuchen" value="${esc(filters.search || "")}"></label></div><div class="file-explorer">${admin.folderView(current, filters.folder)}<div class="explorer-main"><nav class="explorer-breadcrumb" aria-label="Ordnerpfad"><button data-open-folder="all">${esc(site(current).name)}</button>${chain.map((f) => `<span>/</span><button data-open-folder="${esc(f.id)}">${esc(f.name)}</button>`).join("")}</nav><div class="explorer-folder-grid">${children.map((f) => `<button class="explorer-folder" data-open-folder="${esc(f.id)}" data-drop-folder="${esc(f.id)}"><span aria-hidden="true">📁</span><b>${esc(f.name)}</b></button>`).join("")}</div>${folder ? `<div class="dropzone" id="dropzone" data-drop-folder="${esc(folder.id)}">${icon("upload")}<div><b>Dateien hier ablegen</b><p>${esc(admin.folderLabel(folder.id))} · Dateien werden direkt gespeichert</p></div></div>` : '<p class="folder-upload-hint">Dateien direkt auf einen Ordner ziehen oder einen Ordner zum Hochladen öffnen.</p>'}<div id="doc-rows">${docs.length ? `<div class="table-scroll"><table class="explorer-files"><thead><tr><th>NAME</th><th>ORDNER</th><th>TYP / GRÖSSE</th><th>ABGELEGT VON / DATUM</th><th>AKTIONEN</th></tr></thead><tbody>${docs.map((d) => `<tr draggable="${canDelete(d)}" ${canDelete(d) ? `data-drag-document="${esc(d.id)}"` : ""} data-open-document="${esc(d.id)}"><td><button class="doc-name" data-preview="${esc(d.id)}">${icon("file")}${esc(d.name)}</button></td><td>${esc(admin.folderLabel(d.folderId))}</td><td>${esc(d.fileType || "Datei")}<small>${size(d.fileSize)}</small></td><td><b>${esc(d.uploadedByName || data.users.find((u) => u.initials === d.uploadedBy)?.name || d.uploadedBy)}</b><small>${fmt(d.uploadedAt)}</small></td><td><div class="doc-actions"><button data-download="${esc(d.id)}">Download</button>${canDelete(d) ? `<button data-rename="${esc(d.id)}">Umbenennen / Verschieben</button><button data-delete="${esc(d.id)}" class="danger">Löschen</button>` : ""}</div></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty"><h3>Keine Dateien in dieser Ansicht</h3><p>Dateien auf einen Ordner oder die Ablagefläche ziehen.</p></div>'}</div></div></div>`;
   }
   function bindDocs() {
     const { current, filters } = getState();
@@ -170,11 +221,12 @@ export function createDocuments(context) {
   }
   function uploadForm() {
     const { current, filters, tab = "docs" } = getState();
-    if (!user.id) return;
+    const general = current === generalDocumentationId;
+    if (!user.id || (general && !isAdministrator(user))) return;
     const folders = data.folders.filter(
       (f) => f.siteId === current && (f.sectionId || "docs") === tab,
     );
-    if (!folders.length) {
+    if (!general && !folders.length) {
       toast("Bitte zuerst einen Ordner für die Dokumentenablage anlegen.");
       return;
     }
@@ -185,20 +237,21 @@ export function createDocuments(context) {
           : "",
       uploadSite = current;
     show(
-      `<form id="upload-form"><div class="modal-heading"><h2>Dateien hochladen</h2><button type="button" class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><label>Dateien<input name="files" type="file" multiple required></label><label>Ordner<select name="folderId" required>${getAdmin().folderOptions(current, targetFolder)}</select></label><p>${esc(site(current).name)} · Abgelegt von ${esc(user.name)}</p></div><div class="modal-footer"><button type="submit" class="primary">Hochladen</button></div></form>`,
+      `<form id="upload-form"><div class="modal-heading"><h2>Dateien hochladen</h2><button type="button" class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><label>Dateien<input name="files" type="file" multiple required></label>${general ? "" : `<label>Ordner<select name="folderId" required>${getAdmin().folderOptions(current, targetFolder)}</select></label>`}<p>${esc(site(current).name)} · Abgelegt von ${esc(user.name)}</p></div><div class="modal-footer"><button type="submit" class="primary">Hochladen</button></div></form>`,
     );
     $("#upload-form").onsubmit = async (event) => {
       event.preventDefault();
       const form = event.currentTarget,
         button = form.querySelector("[type=submit]");
-      if (!folders.some((f) => f.id === form.elements.folderId.value)) {
+      const folderId = general ? null : form.elements.folderId.value;
+      if (!general && !folders.some((f) => f.id === folderId)) {
         toast("Bitte einen Zielordner auswählen.");
         return;
       }
       button.disabled = true;
       const success = await storeFiles(
         Array.from(form.elements.files.files),
-        form.elements.folderId.value,
+        folderId,
         uploadSite,
       );
       if (success) modal.close();
@@ -206,7 +259,13 @@ export function createDocuments(context) {
     };
   }
   async function storeFiles(files, targetFolder, uploadSite) {
-    if (!user.id || !folderAt(uploadSite, targetFolder) || !files.length)
+    const general = uploadSite === generalDocumentationId;
+    const folder = folderAt(uploadSite, targetFolder);
+    if (
+      !user.id ||
+      !files.length ||
+      (general ? !isAdministrator(user) : !folder)
+    )
       return false;
     if (uploading) {
       toast("Bitte den laufenden Upload abwarten.");
@@ -245,9 +304,9 @@ export function createDocuments(context) {
       if (!save()) throw Error("Metadata could not be saved");
       const state = getState();
       if (
+        !general &&
         state.current === uploadSite &&
-        (state.tab || "docs") ===
-          (folderAt(uploadSite, targetFolder).sectionId || "docs")
+        (state.tab || "docs") === (folder.sectionId || "docs")
       ) {
         state.filters.folder = targetFolder;
         state.filters.search = "";
@@ -349,5 +408,5 @@ export function createDocuments(context) {
       toast("Datei gelöscht.");
     };
   }
-  return { documentsView, bindDocs, download };
+  return { documentsView, bindDocs, generalView, bindGeneral, download };
 }

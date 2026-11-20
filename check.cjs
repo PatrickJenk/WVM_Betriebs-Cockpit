@@ -1,2 +1,2 @@
 // Kompatibler Aufruf für ältere Anleitungen.
-require('./tests/smoke.cjs');
+require("./tests/smoke.cjs");

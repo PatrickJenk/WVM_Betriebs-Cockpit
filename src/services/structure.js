@@ -1,23 +1,59 @@
 // Gemeinsame Strukturregeln: stabile IDs behalten Inhalte beim Umbenennen/Verschieben.
+export const generalDocumentationId = "general-documentation";
+export const controlSheetTab = "control-sheet";
+// Older installations may still store this optional field.
+export const plantGroups = [
+  "Primärenergie",
+  "Austragung",
+  "Erzeuger",
+  "Fernleitungsgruppe",
+  "Speicher",
+  "Gebäude",
+];
+
+export function retireHeatingPlants(plants, sites) {
+  const heatingSites = new Set(
+    sites.filter((site) => !site.type).map((site) => site.id),
+  );
+  let changed = false;
+  for (const plant of plants) {
+    if (plant.deleted || !heatingSites.has(plant.siteId)) continue;
+    plant.deleted = true;
+    plant.active = false;
+    changed = true;
+  }
+  return changed;
+}
+
 export const standardTabs = [
   { builtin: "log", name: "Logbuch", order: 0 },
   { builtin: "docs", name: "Dokumente", order: 1 },
+  { builtin: controlSheetTab, name: "Kontrollblatt", order: 2 },
 ];
 
 export function siteTabs(data, siteId, includeHidden = false) {
   const saved = (data.structure?.sections || []).filter(
     (s) => s.siteId === siteId,
   );
-  const tabs = standardTabs.map((defaults) => ({
-    ...defaults,
-    id: defaults.builtin,
-    siteId,
-    ...saved.find((s) => s.builtin === defaults.builtin),
-    key: defaults.builtin,
-  }));
+  const location = data.structure?.sites?.find((site) => site.id === siteId);
+  const tabs = standardTabs
+    .filter(
+      ({ builtin }) =>
+        builtin !== controlSheetTab || (location && !location.type),
+    )
+    .map((defaults) => ({
+      ...defaults,
+      id: defaults.builtin,
+      siteId,
+      ...saved.find((s) => s.builtin === defaults.builtin),
+      key: defaults.builtin,
+    }));
+  const customOrder = tabs.length;
   saved
     .filter((s) => !s.builtin)
-    .forEach((s, index) => tabs.push({ order: index + 2, ...s, key: s.id }));
+    .forEach((s, index) =>
+      tabs.push({ order: index + customOrder, ...s, key: s.id }),
+    );
   return tabs
     .filter((s) => includeHidden || !s.hidden)
     .sort((a, b) => a.order - b.order);

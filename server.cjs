@@ -3,6 +3,13 @@ const http = require("node:http"),
   path = require("node:path");
 const api = require("./server-api.cjs");
 const security = require("./server-security.cjs");
+const collaboration = require("./server-collaboration.cjs");
+const processMail = () =>
+  collaboration
+    .worker()
+    .catch(() => console.error("E-Mail-Hintergrundprüfung fehlgeschlagen."));
+processMail();
+setInterval(processMail, 60000).unref();
 const maintenance = require("./server-backup.cjs").maintenance;
 try {
   maintenance();
@@ -19,6 +26,9 @@ setInterval(() => {
 }, 3600000).unref();
 const publicRoot = path.join(__dirname, "public");
 const sourceRoot = path.join(__dirname, "src");
+const pdfRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
+const pdfAsset =
+  /^\/vendor\/pdfjs\/(build\/pdf(?:\.worker)?\.mjs|web\/pdf_viewer\.(?:mjs|css)|web\/images\/[\w-]+\.(?:svg|gif)|cmaps\/[\w-]+\.bcmap|standard_fonts\/[\w-]+\.(?:ttf|pfb)|wasm\/(?:jbig2|openjpeg)_nowasm_fallback\.js)$/;
 const lan = process.argv.includes("--lan");
 const host =
   process.env.HOST || (lan || security.production ? "0.0.0.0" : "127.0.0.1");
@@ -38,8 +48,11 @@ function revision(dir) {
 const types = {
   html: "text/html; charset=utf-8",
   js: "text/javascript; charset=utf-8",
+  mjs: "text/javascript; charset=utf-8",
   css: "text/css; charset=utf-8",
   png: "image/png",
+  gif: "image/gif",
+  svg: "image/svg+xml",
 };
 http
   .createServer(
@@ -65,6 +78,20 @@ http
       let file, root;
       try {
         const url = decodeURIComponent(req.url.split("?")[0]);
+        const asset = url.match(pdfAsset)?.[1];
+        if (asset && ["GET", "HEAD"].includes(req.method)) {
+          return fs.readFile(path.join(pdfRoot, asset), (err, bytes) => {
+            if (err) {
+              res.writeHead(404);
+              return res.end();
+            }
+            res.setHeader(
+              "Content-Type",
+              types[path.extname(asset).slice(1)] || "application/octet-stream",
+            );
+            res.end(req.method === "HEAD" ? undefined : bytes);
+          });
+        }
         const isSource = url.startsWith("/src/");
         root = isSource ? sourceRoot : publicRoot;
         file = path.resolve(

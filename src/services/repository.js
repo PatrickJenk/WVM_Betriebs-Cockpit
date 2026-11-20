@@ -10,7 +10,6 @@ export const mentionState = { seen: [] };
 export const authSettings = {
   production: false,
   passwordMinimum: 8,
-  mfaEnabled: false,
 };
 function accept(result) {
   mentionState.seen = result.mentionSeen || [];
@@ -34,6 +33,11 @@ function request(method, url, payload) {
   const xhr = new XMLHttpRequest();
   xhr.open(method, url, false);
   xhr.setRequestHeader("Content-Type", "application/json");
+  if (authenticated)
+    xhr.setRequestHeader(
+      "X-Cockpit-Account",
+      sessionStorage.getItem("cockpit-account") || "",
+    );
   if (csrf) xhr.setRequestHeader("X-CSRF-Token", csrf);
   xhr.send(payload === undefined ? null : JSON.stringify(payload));
   csrf = xhr.getResponseHeader("X-CSRF-Token") || csrf;
@@ -50,6 +54,9 @@ function request(method, url, payload) {
   return result;
 }
 export const repository = {
+  call(method, url, payload) {
+    return request(method, url, payload);
+  },
   load() {
     sessionStorage.removeItem(TOKEN);
     const result = request("GET", "/api/session");
@@ -62,6 +69,40 @@ export const repository = {
   markMentionsSeen(ids) {
     const result = request("POST", "/api/mentions/seen", { ids });
     mentionState.seen = result.mentionSeen || [];
+  },
+  saveControlSheet(siteId, operation, payload, data) {
+    const method = ["template", "form"].includes(operation) ? "PUT" : "POST";
+    Object.assign(
+      data,
+      accept(
+        request(
+          method,
+          "/api/sites/" + encodeURIComponent(siteId) + "/control-" + operation,
+          payload,
+        ),
+      ),
+    );
+  },
+  async saveControlPdf(siteId, version, id, bytes, data) {
+    const response = await fetch(
+      "/api/sites/" + encodeURIComponent(siteId) + "/control-complete",
+      {
+        method: "POST",
+        headers: {
+          ...authHeaders(),
+          "Content-Type": "application/pdf",
+          "X-Cockpit-Template-Version": version,
+          "X-Cockpit-Run-Id": id,
+        },
+        body: bytes,
+      },
+    );
+    const result = await response.json();
+    if (!response.ok)
+      throw Error(
+        result.error || "Das Kontrollblatt konnte nicht abgelegt werden.",
+      );
+    Object.assign(data, accept(result));
   },
   save(data) {
     if (JSON.stringify(data) === baseline) return;
@@ -78,14 +119,12 @@ export const repository = {
       throw error;
     }
   },
-  authenticate(name, password, code) {
+  authenticate(name, password) {
     try {
-      const result = request("POST", "/api/login", { name, password, code });
+      const result = request("POST", "/api/login", { name, password });
       accept(result);
       lastError = "";
-      return result.data.users.find(
-        (u) => u.name.toLowerCase() === name.toLowerCase(),
-      );
+      return result.data.users.find((u) => u.id === result.accountId);
     } catch (error) {
       lastError = error.message;
       return null;
@@ -112,13 +151,16 @@ export const repository = {
       throw error;
     }
   },
-  setupMfa(password, code) {
-    return request("POST", "/api/mfa/setup", { password, code });
-  },
-  confirmMfa(code, data) {
-    const result = request("POST", "/api/mfa/confirm", { code });
-    Object.assign(data, accept(result));
-    return result.recoveryCodes;
+  async manageAccount(path, method, payload) {
+    const response = await fetch("/api/accounts" + path, {
+      method,
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, revision }),
+    });
+    const result = await response.json();
+    if (!response.ok)
+      throw Error(result.error || "Benutzeraktion fehlgeschlagen.");
+    return result;
   },
   audit() {
     return request("GET", "/api/audit").events;
@@ -238,9 +280,39 @@ export const repository = {
     }
   },
 };
-const authHeaders = () => ({
+export const authHeaders = () => ({
   "X-CSRF-Token": csrf,
+  "X-Cockpit-Account": sessionStorage.getItem("cockpit-account") || "",
 });
+// Own transport: confidential data never enters the shared state/baseline.
+export async function leadershipRequest(path = "", method = "GET", payload) {
+  const session = await fetch("/api/session", { cache: "no-store" });
+  if (!session.ok) throw Error("Bitte erneut anmelden.");
+  const identity = await session.json();
+  if (
+    !identity.authenticated ||
+    identity.accountId !== sessionStorage.getItem("cockpit-account")
+  )
+    throw Error("Die Anmeldung wurde geändert. Bitte neu anmelden.");
+  csrf = session.headers.get("X-CSRF-Token") || csrf;
+  const response = await fetch("/api/leadership" + path, {
+    method,
+    cache: "no-store",
+    headers: {
+      ...authHeaders(),
+      "Content-Type": "application/json",
+      "X-Cockpit-Account": identity.accountId,
+    },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw Error(
+      result.error || "Sitzung konnte nicht geladen oder gespeichert werden.",
+    );
+  }
+  return path.endsWith("/pdf") ? response.blob() : response.json();
+}
 let legacyDb;
 async function legacyFile(id) {
   try {

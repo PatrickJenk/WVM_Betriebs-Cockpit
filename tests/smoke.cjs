@@ -18,9 +18,16 @@ const fs = require("node:fs"),
     await import("../src/auth/accounts.js");
   const { createLogbook } = await import("../src/features/logbook.js");
   const { createStructure } = await import("../src/admin/structure.js");
-  const { siteTabs } = await import("../src/services/structure.js");
+  const { controlSheetTab, generalDocumentationId, siteTabs } =
+    await import("../src/services/structure.js");
   const { createDocuments } = await import("../src/features/documents.js");
   const { createDashboard } = await import("../src/features/dashboard.js");
+  const { createControlRounds } =
+    await import("../src/features/control-rounds.js");
+  const { createCollaboration } =
+    await import("../src/features/collaboration.js");
+  const { createLeadership, canLead } =
+    await import("../src/features/leadership.js");
   const { uuid } = await import("../src/services/ids.js");
   const { isOverdue } = await import("../src/services/entry-status.js");
   const { entryMentions, mentionSummary } =
@@ -45,6 +52,7 @@ const fs = require("node:fs"),
     "Unterdorfstrasse 33, Ostermundigen",
   );
   const nodes = new Map();
+  const dialogEvents = new Map();
   const node = (k) => {
     if (!nodes.has(k))
       nodes.set(k, {
@@ -59,7 +67,9 @@ const fs = require("node:fs"),
         close() {
           this.open = false;
         },
-        addEventListener() {},
+        addEventListener(type, handler) {
+          if (k === "#modal") dialogEvents.set(type, handler);
+        },
       });
     return nodes.get(k);
   };
@@ -81,12 +91,18 @@ const fs = require("node:fs"),
       createAdministration,
       createStructure,
       siteTabs,
+      controlSheetTab,
+      generalDocumentationId,
       initializeAccounts,
       createAccounts,
       isAdministrator,
       createLogbook,
       createDocuments,
       createDashboard,
+      createControlRounds,
+      createCollaboration,
+      createLeadership,
+      canLead,
       putFile: async () => {},
       getFile: async () => {},
       deleteFile: async () => {},
@@ -113,6 +129,7 @@ const fs = require("node:fs"),
     };
   global.sessionStorage = context.sessionStorage;
   global.document = context.document;
+  global.location = context.location;
   vm.createContext(context);
   const source = fs
     .readFileSync(require("node:path").join(__dirname, "../src/app.js"), "utf8")
@@ -125,6 +142,7 @@ const fs = require("node:fs"),
   assert.ok(!node("#app").innerHTML.includes("Betriebsdokumente"));
   assert.ok(!node("#app").innerHTML.includes("operations-add"));
   assert.ok(node("#app").innerHTML.includes('id="manage-cockpit"'));
+  assert.ok(node("#app").innerHTML.includes('id="own-password-button"'));
   for (const duplicate of [
     'id="manage-users"',
     'id="manage-structure"',
@@ -135,15 +153,30 @@ const fs = require("node:fs"),
   ])
     assert.ok(!node("#app").innerHTML.includes(duplicate), duplicate);
   assert.match(node("#content").innerHTML, /marzili-logo/);
+  assert.match(node("#app").innerHTML, /href="#documentation"/);
+  assert.match(node("#app").innerHTML, /href="#personnel"/);
+  assert.match(node("#app").innerHTML, /href="#leadership"/);
+  vm.runInContext("user.leadership=false;shell()", context);
+  assert.doesNotMatch(node("#app").innerHTML, /href="#leadership"/);
+  vm.runInContext("delete user.leadership", context);
+  context.location.hash = "#documentation";
+  vm.runInContext("shell()", context);
   assert.match(
-    node("#app").innerHTML,
+    node("#content").innerHTML,
     /href="\/api\/handbook" target="_blank"/,
   );
+  assert.match(node("#content").innerHTML, /id="general-upload"/);
+  vm.runInContext("user.role='EPC';shell()", context);
+  assert.doesNotMatch(node("#content").innerHTML, /id="general-upload"/);
+  vm.runInContext("user.role='Admin'", context);
+  context.location.hash = "#dashboard";
+  vm.runInContext("shell()", context);
   vm.runInContext(
     'data.entries[0].status="Pendenz";data.entries[0].mentions=[{id:user.id,name:user.name}];render()',
     context,
   );
-  assert.ok(node("#content").innerHTML.includes("1 Erwähnungen"));
+  assert.match(node("#content").innerHTML, /aria-label="Meine Erwähnungen"/);
+  assert.doesNotMatch(node("#content").innerHTML, /\d+ Erwähnungen/);
   node("#my-mentions").onclick();
   assert.equal(context.location.hash, "#dashboard");
   assert.equal(vm.runInContext("filters.mine", context), true);
@@ -152,6 +185,7 @@ const fs = require("node:fs"),
   vm.runInContext('data.entries[0].status="Erledigt";render()', context);
   assert.ok(node("#content").innerHTML.includes('id="my-mentions"'));
   assert.ok(node("#content").innerHTML.includes('data-entry="seed-0"'));
+  vm.runInContext('data.entries[1].status="Pendenz"', context);
   for (const selector of [".nav-dashboard", ".brand", ".dashboard-logo"]) {
     vm.runInContext(
       'filters={mine:true,high:true,late:true,query:"test"};onlyOpen=true;shell()',
@@ -170,9 +204,25 @@ const fs = require("node:fs"),
     assert.ok(node("#content").innerHTML.includes('data-entry="seed-1"'));
   }
   vm.runInContext("data.entries[0].mentions=[];filters={};render()", context);
+  assert.doesNotMatch(node("#content").innerHTML, /data-entry="seed-0"/);
+  node("#toggle-log-archive").onclick();
+  assert.match(node("#content").innerHTML, /Archiv · Erledigte Einträge/);
+  assert.match(node("#content").innerHTML, /data-entry="seed-0"/);
+  assert.doesNotMatch(node("#content").innerHTML, /data-entry="seed-1"/);
+  assert.match(node("#content").innerHTML, /ERSTELLER.*ZU ERLEDIGEN DURCH/);
+  node("#toggle-log-archive").onclick();
   assert.ok(node("#content").innerHTML.includes('id="my-mentions"'));
   assert.ok(!node("#content").innerHTML.includes("network-card"));
   vm.runInContext("current='eiger';tab='docs';render()", context);
+  assert.doesNotMatch(node("#content").innerHTML, /id="my-mentions"/);
+  assert.match(node("#content").innerHTML, /data-tab="control-sheet"/);
+  vm.runInContext("tab='control-sheet';render()", context);
+  assert.match(node("#content").innerHTML, /Neuer Kontrollrundgang/);
+  assert.doesNotMatch(
+    node("#content").innerHTML,
+    /Rundgang-Notizen|Abgeschlossene Rundgänge/,
+  );
+  vm.runInContext("tab='docs';render()", context);
   node("#new-section").onclick();
   node("#structure-form").onsubmit({
     preventDefault() {},
@@ -208,6 +258,7 @@ const fs = require("node:fs"),
   );
   assert.ok(!node("#app").innerHTML.includes('id="manage-users"'));
   assert.ok(!node("#app").innerHTML.includes('id="manage-cockpit"'));
+  assert.ok(node("#app").innerHTML.includes('id="own-password-button"'));
   assert.ok(!node("#content").innerHTML.includes('id="manage-plants"'));
   assert.ok(!node("#content").innerHTML.includes('id="new-folder"'));
   assert.ok(!node("#content").innerHTML.includes('id="new-section"'));
@@ -226,7 +277,7 @@ const fs = require("node:fs"),
       "isVisible({status:'Erledigt',completedAt:'2026-03-31T21:59:59Z'},new Date('2026-04-01T00:00:00Z'))",
       context,
     ),
-    false,
+    true,
   );
   assert.equal(
     vm.runInContext(
@@ -244,7 +295,7 @@ const fs = require("node:fs"),
         `isVisible({status:'Erledigt',completedAt:'${before}'},new Date('${date}T12:00:00Z'))`,
         context,
       ),
-      false,
+      true,
     );
   }
   vm.runInContext("accounts.logout()", context);
@@ -324,7 +375,7 @@ const fs = require("node:fs"),
         `isVisible({status:'Erledigt',completedAt:'${end}'},new Date('${start}'))`,
         context,
       ),
-      false,
+      true,
     );
   }
   assert.equal(sites.length, 14);
@@ -351,39 +402,81 @@ const fs = require("node:fs"),
     assert.ok(node("#content").innerHTML.includes(stationLabel(station)));
   }
   vm.runInContext("current=null;shell()", context);
-  assert.equal(
-    (node("#app").innerHTML.match(/class="station-group"/g) || []).length,
-    6,
-  );
-  assert.equal(
-    (node("#app").innerHTML.match(/>Heizzentralen<\/span>/g) || []).length,
-    3,
-  );
-  assert.equal(
-    (node("#app").innerHTML.match(/>Unterstationen<\/span>/g) || []).length,
-    3,
-  );
-  assert.equal(
-    vm.runInContext(
-      "navState['marzili-substations']=false;navExpanded('marzili-substations',sites.filter(s=>s.heatNetworkId==='marzili'&&s.type))",
-      context,
+  assert.doesNotMatch(node("#app").innerHTML, /<details class="network-group"/);
+  assert.ok(
+    node("#app").innerHTML.includes(
+      '<div class="nav-label">WÄRMEVERBÜNDE</div>',
     ),
-    false,
   );
-  assert.equal(
-    vm.runInContext(
-      "current='holzikofen';navExpanded('marzili-substations',sites.filter(s=>s.heatNetworkId==='marzili'&&s.type))",
-      context,
-    ),
-    false,
+  assert.doesNotMatch(node("#app").innerHTML, /href="#networks"/);
+  context.location.hash = "#networks";
+  await vm.runInContext("route()", context);
+  assert.match(node("#content").innerHTML, /href="#network\/marzili"/);
+  for (const network of networks) {
+    context.location.hash = "#network/" + network.id;
+    await vm.runInContext("route()", context);
+    const html = node("#content").innerHTML;
+    assert.match(html, /class="station-card-icon"><svg/);
+    assert.match(html, /<h2>Heizzentralen<\/h2>/);
+    assert.match(html, /<h2>Unterstationen<\/h2>/);
+    if (network.id === "marzili") {
+      assert.match(html, /<strong>E73<\/strong><small>Eigerstrasse 73/);
+      assert.match(html, /<strong>M68<\/strong><small>Monbijoustrasse 68/);
+      assert.match(html, /<strong>H36<\/strong><small>Holzikofenweg 36/);
+      assert.doesNotMatch(html, /\d offen/);
+    }
+    assert.equal(
+      html.includes('id="station-search"'),
+      sites.filter((s) => s.heatNetworkId === network.id).length > 6,
+    );
+    assert.ok(
+      html.indexOf("<h2>Heizzentralen") < html.indexOf("<h2>Unterstationen"),
+    );
+    for (const station of sites)
+      assert.equal(
+        html.includes('href="#site/' + station.id + '"'),
+        station.heatNetworkId === network.id,
+      );
+  }
+  const stationCards = ["Linden", "Milchstrasse"].map((name) => ({
+    dataset: { stationSearch: name },
+  }));
+  const emptySearch = {};
+  context.document.querySelectorAll = (selector) =>
+    selector === "#content .station-section"
+      ? [
+          {
+            querySelectorAll: () => stationCards,
+            querySelector: () => emptySearch,
+          },
+        ]
+      : [];
+  context.location.hash = "#network/moesli";
+  await vm.runInContext("route()", context);
+  const stationSearch = node("#station-search");
+  stationSearch.value = "MILCH";
+  stationSearch.oninput();
+  assert.deepEqual(
+    stationCards.map((card) => card.hidden),
+    [true, false],
   );
-  assert.equal(
-    vm.runInContext(
-      "navState['marzili-substations']=true;navExpanded('marzili-substations')",
-      context,
-    ),
-    true,
-  );
+  stationSearch.value = "ohne Treffer";
+  stationSearch.oninput();
+  assert.equal(emptySearch.hidden, false);
+  context.document.querySelectorAll = () => [];
+  context.location.hash = "#site/holzikofen";
+  await vm.runInContext("route()", context);
+  assert.match(node("#content").innerHTML, /Holzikofen/);
+  context.location.hash = "#dashboard";
+  await vm.runInContext("route()", context);
+  assert.equal(dialogEvents.has("click"), false);
+  let cancelPrevented = false;
+  dialogEvents.get("cancel")({
+    preventDefault() {
+      cancelPrevented = true;
+    },
+  });
+  assert.equal(cancelPrevented, true);
   const templates = seed().folders;
   for (const heating of sites.filter((s) => !s.type)) {
     assert.equal(

@@ -81,7 +81,8 @@
   tab = "docs";
   data.documents.push({ id: "d", folderId: child, siteId: "s" });
   api.deleteFolder(other);
-  assert.ok(html.includes("1 Unterordner und 1 Dokumente"));
+  assert.ok(html.includes("enthaltenen Unterordner und Dokumente"));
+  assert.doesNotMatch(html, /\d+ Unterordner/);
   assert.equal(data.documents.length, 1);
   node("#folder-cancel").onclick();
   assert.equal(data.documents.length, 1);

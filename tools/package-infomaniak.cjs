@@ -93,13 +93,19 @@ function createPackage({
     add(file, path.join(project, file));
   tree("public");
   tree("src");
+  tree("docs");
   for (const file of [
     "resources/Benutzerhandbuch_Waermeverbund_Cockpit.pdf",
     "tools/backup.cjs",
+    "tools/setup-backup-admin.cjs",
     "tools/restore.cjs",
     "tools/hosting-env.cjs",
     "tools/hosting-backup.cjs",
-    "INFOMANIAK-START.md",
+    "tools/mail-worker.cjs",
+    "tools/deployment-check.cjs",
+    "tools/migrate.cjs",
+    "tools/check-syntax.cjs",
+    "README.md",
     "package-lock.json",
     ".env.example",
   ])
@@ -113,6 +119,11 @@ function createPackage({
       "node --env-file-if-exists=.env.production server-hosting.cjs",
     backup:
       "node --env-file-if-exists=.env.production tools/hosting-backup.cjs",
+    "setup:backup-admin":
+      "node --env-file-if-exists=.env.production tools/setup-backup-admin.cjs",
+    "mail:run":
+      "node --env-file-if-exists=.env.production tools/mail-worker.cjs",
+    "db:migrate": "node --env-file-if-exists=.env.production tools/migrate.cjs",
   };
   code.push({
     name: "package.json",
@@ -145,13 +156,13 @@ function createPackage({
   const codeFile = path.join(output, "Einrichtung-NUR-FUER-DICH.txt");
   fs.writeFileSync(
     codeFile,
-    "Infomaniak-Cockpit: persönliche Einrichtung\n\nZieladresse: https://betrieb.waermeverbund.ch\nNode.js: 24 LTS\nAusführungsordner: ./ (package.json direkt darin)\nBuild-/Installationsbefehl: npm ci --omit=dev\nStartbefehl: npm start\nPort: vom Manager; nicht fest überschreiben\n\n" +
+    "Infomaniak-Cockpit: persönliche Einrichtung\n\nZieladresse: tatsächliche COCKPIT_ORIGIN im Manager oder .env.production festlegen\nNode.js: mindestens 22.16, empfohlen 24 LTS\nAusführungsordner: ./ (package.json direkt darin)\nInstallationsbefehl: npm ci --omit=dev\nStartbefehl im ZIP: npm start (im Git-Repository: npm run start:production)\nPort: vom Manager; nicht fest überschreiben\n\n" +
       (setupCode
         ? "Einrichtungscode (einmalig; gültig 30 Tage):\n" +
           setupCode +
           "\n\nBeim ersten Aufruf diesen Code und dein bisheriges WVM-admin-Passwort eingeben. Dann ein neues Admin-Passwort mit mindestens 12, besser 20 Zeichen festlegen. Erst danach wird das Cockpit freigegeben.\n"
         : "Admin-Passwort wurde bereits lokal geändert. Mit dem neuen Passwort anmelden.\n") +
-      "\nNur das VERTRAULICHE Erstinstallations-ZIP in deine eigene Node.js-Website hochladen. Diese Textdatei nicht hochladen oder veröffentlichen. Das ZIP enthält Betriebsdaten und Schlüssel; niemals in GitHub ablegen.\nSpätere Updates ausschliesslich mit dem NUR-CODE-ZIP. hosting-data/ bleibt erhalten.\nDatei-Uploads sind auf deinen Wunsch ohne Virenscanner erlaubt (COCKPIT_SCAN_MODE=disabled). Anmeldung, Rechte, Dateiformat- und Speicherlimits bleiben aktiv; eine automatische Malware-Prüfung entfällt.\n",
+      "\nNur für eine ausdrücklich geplante Erstinstallation. Nicht über eine bestehende produktive Installation legen. Diese Textdatei nicht hochladen oder veröffentlichen. Das ZIP enthält Betriebsdaten und Schlüssel; niemals in GitHub ablegen.\nReguläre Updates ausschliesslich manuell nach docs/INFOMANIAK_DEPLOYMENT.md. Kein neuer ZIP-Import. Datenpfad unverändert erhalten.\nDer bestehende Hostingstarter erlaubt Uploads ohne Virenscanner (COCKPIT_SCAN_MODE=disabled); diese Betriebsentscheidung vor der Freigabe prüfen. Anmeldung, Rechte, Formate und Limits bleiben aktiv.\n",
     { mode: 0o600 },
   );
   const hashes = Object.fromEntries(

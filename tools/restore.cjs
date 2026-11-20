@@ -19,7 +19,7 @@ try {
   if (manifest.version !== 1) throw Error("Unbekanntes Sicherungsformat.");
   for (const [name, hash] of Object.entries(manifest.files)) {
     if (
-      !/^(state\.json|uploads\.json|audit\.json|mention_reads\.json|secret\.key|files\/[a-zA-Z0-9-]{1,100})$/.test(
+      !/^(state\.json|uploads\.json|audit\.json|mention_reads\.json|leadership\.json|collaboration\.json|secret\.key|files\/[a-zA-Z0-9-]{1,100})$/.test(
         name,
       )
     )
@@ -39,6 +39,31 @@ try {
     fs.copyFileSync(path.join(source, name), path.join(target, name));
   const store = require("../server-security.cjs");
   store.locked(() => {
+    if (manifest.files["collaboration.json"])
+      require("../server-collaboration.cjs").restoreData(
+        JSON.parse(
+          fs.readFileSync(path.join(target, "collaboration.json"), "utf8"),
+        ),
+      );
+    if (manifest.files["leadership.json"]) {
+      const leadership = JSON.parse(
+        fs.readFileSync(path.join(target, "leadership.json"), "utf8"),
+      );
+      for (const row of leadership.meetings)
+        store.db
+          .prepare("INSERT INTO leadership_meetings(id,json) VALUES(?,?)")
+          .run(row.id, row.json);
+      for (const row of leadership.tasks)
+        store.db
+          .prepare("INSERT INTO leadership_tasks(id,json) VALUES(?,?)")
+          .run(row.id, row.json);
+      for (const row of leadership.audit)
+        store.db
+          .prepare(
+            "INSERT INTO leadership_audit(id,at,actor,action,entity_id) VALUES(?,?,?,?,?)",
+          )
+          .run(row.id, row.at, row.actor, row.action, row.entity_id);
+    }
     for (const row of JSON.parse(
       fs.readFileSync(path.join(target, "uploads.json"), "utf8"),
     ))
