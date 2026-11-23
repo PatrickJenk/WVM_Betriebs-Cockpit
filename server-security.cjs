@@ -1,5 +1,5 @@
+const { archived } = require("./src/services/entry-status.js");
 const fs = require("node:fs");
-const mfaEnabled = process.env.COCKPIT_MFA_ENABLED === "1";
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS uploads (id TEXT PRIMARY KEY, owner TEXT NOT NULL, si
 CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, at TEXT NOT NULL, actor TEXT, action TEXT NOT NULL, details TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS mention_reads (user_id TEXT NOT NULL, entry_id TEXT NOT NULL, PRIMARY KEY(user_id,entry_id));
 CREATE TABLE IF NOT EXISTS attempts (key TEXT PRIMARY KEY, count INTEGER NOT NULL, until INTEGER NOT NULL);`);
+// Vertrauliche Sitzungen liegen bewusst ausserhalb des gemeinsam ausgelieferten state.
+db.exec(`
+CREATE TABLE IF NOT EXISTS leadership_meetings (id TEXT PRIMARY KEY, json TEXT NOT NULL, pdf BLOB);
+CREATE TABLE IF NOT EXISTS leadership_tasks (id TEXT PRIMARY KEY, json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS leadership_audit (id INTEGER PRIMARY KEY, at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, entity_id TEXT NOT NULL);
+`);
 db.exec(
   "CREATE TABLE IF NOT EXISTS upload_jobs (id TEXT PRIMARY KEY, owner TEXT NOT NULL, reserved INTEGER NOT NULL, expires INTEGER NOT NULL)",
 );
@@ -76,6 +82,10 @@ if (!read() && fs.existsSync(legacy))
     );
     persist(state);
   });
+const hashPassword = (password) => {
+  const salt = crypto.randomBytes(16).toString("hex");
+  return salt + ":" + crypto.scryptSync(password, salt, 32).toString("hex");
+};
 const digest = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
 const error = (message, status = 400) =>
@@ -230,14 +240,6 @@ function requireUser(user, pending = false) {
   if (!user) throw error("Bitte erneut anmelden.", 401);
   if (!pending && user.mustChangePassword)
     throw error("Bitte zuerst ein eigenes Passwort festlegen.", 403);
-  if (
-    !pending &&
-    mfaEnabled &&
-    production &&
-    ["Admin", "Administrator"].includes(user.role) &&
-    !user.mfaSecret
-  )
-    throw error("Bitte zuerst die Zwei-Faktor-Anmeldung einrichten.", 403);
 }
 function passwordPolicy(value, temporary = false) {
   const min = production ? 12 : 8;
@@ -253,27 +255,6 @@ function passwordPolicy(value, temporary = false) {
         min +
         " Zeichen verwenden.",
     );
-}
-function archived(entry, now = new Date()) {
-  if (entry.status !== "Erledigt") return false;
-  const date = new Date(
-    entry.completedAt || entry.updatedAt || entry.createdAt,
-  );
-  const swiss = (d) =>
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Zurich",
-      year: "numeric",
-      month: "2-digit",
-    }).formatToParts(d);
-  if (!Number.isFinite(date.getTime())) return false;
-  const quarter = (d) => {
-    const p = swiss(d);
-    return (
-      Number(p.find((x) => x.type === "year").value) * 4 +
-      Math.floor((Number(p.find((x) => x.type === "month").value) - 1) / 3)
-    );
-  };
-  return quarter(date) < quarter(now);
 }
 function upload(id) {
   return db.prepare("SELECT * FROM uploads WHERE id=?").get(id);
@@ -422,35 +403,6 @@ function removeFile(id) {
   db.prepare("DELETE FROM uploads WHERE id=?").run(id);
 }
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-function base32(bytes) {
-  let bits = 0,
-    value = 0,
-    out = "";
-  for (const b of bytes) {
-    value = (value << 8) | b;
-    bits += 8;
-    while (bits >= 5) {
-      out += alphabet[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  if (bits) out += alphabet[(value << (5 - bits)) & 31];
-  return out;
-}
-function unbase32(value) {
-  let bits = 0,
-    buffer = 0,
-    out = [];
-  for (const c of value) {
-    buffer = (buffer << 5) | alphabet.indexOf(c);
-    bits += 5;
-    if (bits >= 8) {
-      out.push((buffer >>> (bits - 8)) & 255);
-      bits -= 8;
-    }
-  }
-  return Buffer.from(out);
-}
 function encrypt(value) {
   const key = crypto
       .createHash("sha256")
@@ -482,30 +434,6 @@ function decrypt(value) {
     decipher.final(),
   ]).toString("utf8");
 }
-function totpStep(secret, code) {
-  if (!/^\d{6}$/.test(String(code))) return null;
-  for (let drift = -1; drift <= 1; drift++) {
-    const step = Math.floor(Date.now() / 30000) + drift,
-      counter = Buffer.alloc(8);
-    counter.writeBigUInt64BE(BigInt(step));
-    const h = crypto
-        .createHmac("sha1", unbase32(secret))
-        .update(counter)
-        .digest(),
-      offset = h.at(-1) & 15,
-      expected = String(
-        (h.readUInt32BE(offset) & 0x7fffffff) % 1000000,
-      ).padStart(6, "0");
-    if (
-      crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(String(code)))
-    )
-      return step;
-  }
-  return null;
-}
-function totp(secret, code) {
-  return totpStep(secret, code) !== null;
-}
 function preflight(matches) {
   if (!production) return;
   const state = read();
@@ -531,19 +459,6 @@ function preflight(matches) {
           " muss vorher ein Passwort mit mindestens 12 Zeichen festlegen oder ein neues Startpasswort erhalten.",
       );
   }
-  if (
-    mfaEnabled &&
-    !state.data.users.some(
-      (u) =>
-        u.active !== false &&
-        ["Admin", "Administrator"].includes(u.role) &&
-        u.mfaSecret &&
-        u.passwordPolicyMinimum >= 12,
-    )
-  )
-    throw Error(
-      "Produktion: mindestens ein aktiver Admin muss vorher ein eigenes Passwort und Zwei-Faktor-Anmeldung einrichten.",
-    );
 }
 function headers(res) {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -564,7 +479,6 @@ module.exports = {
   db,
   root,
   production,
-  mfaEnabled,
   read,
   persist,
   locked,
@@ -587,11 +501,9 @@ module.exports = {
   storeUpload,
   removeFile,
   headers,
-  base32,
   encrypt,
   decrypt,
-  totp,
-  totpStep,
   preflight,
   digest,
+  hashPassword,
 };

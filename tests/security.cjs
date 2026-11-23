@@ -65,31 +65,6 @@ async function call(route, method = "GET", payload, session = {}, extra = {}) {
   }
   return { status: r.status, value, headers: r.headers };
 }
-function otp(secret) {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  let bits = 0,
-    value = 0,
-    bytes = [];
-  for (const c of secret) {
-    value = (value << 5) | alphabet.indexOf(c);
-    bits += 5;
-    if (bits >= 8) {
-      bytes.push((value >>> (bits - 8)) & 255);
-      bits -= 8;
-    }
-  }
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
-  const h = crypto
-      .createHmac("sha1", Buffer.from(bytes))
-      .update(counter)
-      .digest(),
-    offset = h.at(-1) & 15;
-  return String((h.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(
-    6,
-    "0",
-  );
-}
 let scanner;
 (async () => {
   const { seed } = await import("../src/data/seed.js"),
@@ -215,10 +190,10 @@ let scanner;
     200,
   );
   snapshot = (await call("/api/state", "GET", undefined, member)).value;
-  assert.ok(!snapshot.data.entries.some((e) => e.id === "archived"));
+  assert.ok(snapshot.data.entries.some((e) => e.id === "archived"));
   assert.equal(
     (await call("/api/files/archive-pdf", "GET", undefined, member)).status,
-    404,
+    200,
   );
   assert.equal(
     (await call("/api/files/archive-pdf", "DELETE", undefined, member)).status,
@@ -321,86 +296,11 @@ let scanner;
     ).status,
     200,
   );
-  const setup = await call(
-    "/api/mfa/setup",
-    "POST",
-    { password: "AdminSecurePassword123" },
-    admin,
-  );
-  assert.equal(setup.status, 200);
-  const confirmed = await call(
-    "/api/mfa/confirm",
-    "POST",
-    { code: otp(setup.value.secret) },
-    admin,
-  );
-  assert.equal(confirmed.status, 200);
-  assert.equal(confirmed.value.recoveryCodes.length, 8);
-  assert.ok(!JSON.stringify(confirmed.value.data).includes(setup.value.secret));
-  assert.equal(
-    (
-      await call("/api/login", "POST", {
-        name: "WVM-admin",
-        password: "AdminSecurePassword123",
-        code: "000000",
-      })
-    ).status,
-    401,
-  );
-  assert.equal(
-    (
-      await call(
-        "/api/login",
-        "POST",
-        {
-          name: "WVM-admin",
-          password: "AdminSecurePassword123",
-          code: otp(setup.value.secret),
-        },
-        admin,
-      )
-    ).status,
-    200,
-  );
-  assert.equal(
-    (
-      await call("/api/login", "POST", {
-        name: "WVM-admin",
-        password: "AdminSecurePassword123",
-        code: otp(setup.value.secret),
-      })
-    ).status,
-    401,
-  );
-  const recovery = confirmed.value.recoveryCodes[0];
-  assert.equal(
-    (
-      await call(
-        "/api/login",
-        "POST",
-        {
-          name: "WVM-admin",
-          password: "AdminSecurePassword123",
-          code: recovery,
-        },
-        admin,
-      )
-    ).status,
-    200,
-  );
-  assert.equal(
-    (
-      await call("/api/login", "POST", {
-        name: "WVM-admin",
-        password: "AdminSecurePassword123",
-        code: recovery,
-      })
-    ).status,
-    401,
-  );
+  assert.equal((await call("/api/mfa/setup", "POST", {}, admin)).status, 404);
+  assert.equal((await call("/api/mfa/confirm", "POST", {}, admin)).status, 404);
   const audit = (await call("/api/audit", "GET", undefined, admin)).value
     .events;
-  assert.ok(audit.some((e) => e.action === "auth.mfa.enabled"));
+  assert.ok(audit.some((e) => e.action === "auth.password.changed"));
   assert.ok(!JSON.stringify(audit).includes("AdminSecurePassword123"));
   const backup = spawnSync(
     process.execPath,
@@ -436,13 +336,32 @@ let scanner;
   assert.ok(
     JSON.parse(db.prepare("SELECT json FROM state").get().json).data.users.find(
       (u) => u.id === "admin",
-    ).mfaSecret,
+    ).passwordHash,
   );
   db.close();
-  const prepared = (await call("/api/state", "GET", undefined, admin)).value;
-  prepared.data.users.find((u) => u.id === "mm").password =
-    "MarcelTemporaryPassword123";
-  assert.equal((await call("/api/state", "PUT", prepared, admin)).status, 200);
+  const secondMember = {};
+  assert.equal(
+    (
+      await call(
+        "/api/login",
+        "POST",
+        { name: "MM", password: "ChangeMe123" },
+        secondMember,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await call(
+        "/api/password",
+        "POST",
+        { password: "MarcelSecurePassword123" },
+        secondMember,
+      )
+    ).status,
+    200,
+  );
   const prod = await start(4181, {
     NODE_ENV: "production",
     COCKPIT_ORIGIN: "https://cockpit.test",
@@ -460,7 +379,6 @@ let scanner;
     {
       name: "WVM-admin",
       password: "AdminSecurePassword123",
-      code: confirmed.value.recoveryCodes[1],
     },
     p,
     proxy,
@@ -468,66 +386,8 @@ let scanner;
   assert.equal(logged.status, 200);
   assert.ok(!logged.value.token);
   assert.match(logged.headers.get("set-cookie"), /Secure/);
-  const newAdminState = (await call("/api/state", "GET", undefined, p, proxy))
-    .value;
-  newAdminState.data.users.push({
-    id: "second-admin",
-    name: "Zweiter Admin",
-    initials: "ZADM",
-    role: "Admin",
-    company: "WVM",
-    password: "SecondTemporaryPassword123",
-    mustChangePassword: true,
-  });
   assert.equal(
-    (await call("/api/state", "PUT", newAdminState, p, proxy)).status,
-    200,
-  );
-  const newcomer = { port: 4181 };
-  const first = await call(
-    "/api/login",
-    "POST",
-    { name: "Zweiter Admin", password: "SecondTemporaryPassword123" },
-    newcomer,
-    proxy,
-  );
-  assert.equal(first.status, 200);
-  assert.deepEqual(first.value.data.documents, []);
-  const newPassword = await call(
-    "/api/password",
-    "POST",
-    { password: "SecondSecurePassword123" },
-    newcomer,
-    proxy,
-  );
-  assert.equal(newPassword.status, 200);
-  assert.equal(newPassword.value.data.users[0].mustSetupMfa, true);
-  assert.equal(
-    (await call("/api/state", "GET", undefined, newcomer, proxy)).status,
-    403,
-  );
-  const secondSetup = await call(
-    "/api/mfa/setup",
-    "POST",
-    { password: "SecondSecurePassword123" },
-    newcomer,
-    proxy,
-  );
-  assert.equal(secondSetup.status, 200);
-  assert.equal(
-    (
-      await call(
-        "/api/mfa/confirm",
-        "POST",
-        { code: otp(secondSetup.value.secret) },
-        newcomer,
-        proxy,
-      )
-    ).status,
-    200,
-  );
-  assert.equal(
-    (await call("/api/state", "GET", undefined, newcomer, proxy)).status,
+    (await call("/api/state", "GET", undefined, p, proxy)).status,
     200,
   );
   assert.equal(
@@ -602,7 +462,7 @@ let scanner;
     (e) => e.status === 415,
   );
   console.log(
-    "Passed: migration/file preservation, anonymous isolation, cookie/CSRF/origin controls, forced password change, path/cycle attacks, archived file rights, upload ownership/limits, logout/rate limit, MFA/recovery/replay, backup/restore, production HTTPS/dev isolation and scanner protocol.",
+    "Passed: migration/file preservation, anonymous isolation, cookie/CSRF/origin controls, forced password change, path/cycle attacks, archived file rights, upload ownership/limits, logout/rate limit, username/password-only access, backup/restore, production HTTPS/dev isolation and scanner protocol.",
   );
 })()
   .catch((error) => {

@@ -3,23 +3,39 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Lokale Demo für Wärmeverbund Marzili und ewb, ohne Docker",
+  "description": "Betriebsführung für die Wärmeverbünde Marzili, Mösli und Buchsee",
   "scripts": {
     "start": "node --watch server.cjs",
-    "check": "node tests/smoke.cjs && node tests/management.cjs && node tests/structure.cjs && node tests/admin-folders.cjs && node tests/structure-http.cjs && node tests/documents.cjs && node tests/logbook.cjs && node tests/mentions.cjs && node tests/session-identity.cjs && node tests/http.cjs && node tests/shared.cjs && node tests/security.cjs",
-    "format": "prettier --write src public tests server.cjs package.json .vscode",
+    "check": "node tests/smoke.cjs && node tests/management.cjs && node tests/structure.cjs && node tests/admin-folders.cjs && node tests/structure-http.cjs && node tests/documents.cjs && node tests/logbook.cjs && node tests/mentions.cjs && node tests/session-identity.cjs && node tests/http.cjs && node tests/shared.cjs && node tests/security.cjs && node tests/accounts.cjs && node tests/leadership.cjs && node tests/collaboration.cjs && node tests/collaboration-ui.cjs && node tests/collaboration-audit.cjs && node tests/local-test.cjs",
+    "format": "prettier --write \"src/**/*.js\" \"src/**/*.css\" \"public/*.js\" \"public/*.html\" \"tests/*.cjs\" \"*.cjs\" \"tools/*.cjs\" package.json .vscode",
     "start:lan": "node --watch server.cjs --lan",
     "start:production": "node --env-file-if-exists=.env.production server-hosting.cjs",
     "hosting:package": "node tools/package-infomaniak.cjs",
     "check:hosting": "node tests/hosting.cjs",
     "check:hosting:scanner": "node tests/hosting-scanner.cjs",
     "backup": "node tools/backup.cjs",
-    "check:security": "node tests/security.cjs"
+    "setup:backup-admin": "node --env-file-if-exists=.env.production tools/setup-backup-admin.cjs",
+    "check:security": "node tests/security.cjs",
+    "mail:run": "node --env-file-if-exists=.env.production tools/mail-worker.cjs",
+    "start:test": "node tools/start-test.cjs",
+    "check:syntax": "node tools/check-syntax.cjs",
+    "check:smtp": "node tests/smtp.cjs",
+    "check:format": "prettier --check \"src/**/*.js\" \"src/**/*.css\" \"public/*.js\" \"public/*.html\" \"tests/*.cjs\" \"*.cjs\" \"tools/*.cjs\" package.json .vscode",
+    "deploy:check": "node tools/deployment-check.cjs",
+    "db:migrate": "node --env-file-if-exists=.env.production tools/migrate.cjs",
+    "check:repository": "node tools/check-repository.cjs",
+    "check:deployment": "node tests/deployment.cjs"
   },
   "engines": {
     "node": ">=22.16"
   },
   "devDependencies": {
+    "linkedom": "^0.18.15",
     "prettier": "^3.9.9"
+  },
+  "dependencies": {
+    "nodemailer": "^10.5.0",
+    "pdfjs-dist": "6.5.438",
+    "pdfkit": "^0.20.2"
   }
 }

@@ -1,32 +1,46 @@
 # Wärmeverbund Betriebs Cockpit
 
-**Infomaniak-Erstinstallation:** `npm.cmd run hosting:package` erstellt ein privates
-ZIP mit Code, Konten und allen Dokumenten. Anleitung: [INFOMANIAK-START.md](INFOMANIAK-START.md).
-Im Infomaniak Manager: Node 24 LTS, Ordner `./`, Installation `npm ci --omit=dev`,
-Start `npm start`, Port aus dem Manager. Im Paket startet dieser Befehl den Produktionsserver.
-Lokal bleiben Start und Bedienung wie bisher. Nur WVM-admin bleibt als aktiver Zugang;
-sein bisheriges Passwort bleibt lokal erhalten und muss vor der Online-Freigabe geändert werden.
-Das Erstinstallationspaket schützt diesen Wechsel zusätzlich mit einem einmaligen Einrichtungscode.
-Im Infomaniak-Paket sind Uploads ausdrücklich ohne Virenscanner erlaubt (`COCKPIT_SCAN_MODE=disabled`). Anmeldung, Rechte, Dateiformat- und Speicherlimits bleiben aktiv.
+Das Cockpit bündelt den Betrieb der Wärmeverbünde Marzili, Mösli und Buchsee. Es enthält Logbuch und Pendenzen, Dokumente, Betriebspersonal, Kontrollrundgänge und den Leitungsaustausch EPC + WVM.
 
-**Lokal starten:** `npm.cmd start`, dann http://localhost:4173.
-**Im LAN testen:** `npm.cmd run start:lannpm.cmd run start:lan`, dann die angezeigte Adresse auf Port 4175.
-Node.js mindestens 22.16; keine separate Datenbankinstallation, kein Docker und kein Build erforderlich.
+## Lokal starten
 
-- [ANLEITUNG.md](ANLEITUNG.md): Bedienung und lokale Tests.
-- [ERWEITERN.md](ERWEITERN.md): Codeübersicht und Erweiterungen.
-- [UEBERGABE.md](UEBERGABE.md): Selbstverwaltung, Zuständigkeiten und Übergabeprüfung.
-- [INFOMANIAK.md](INFOMANIAK.md): Sicherheit, Sicherungen und spätere Hosting-Einrichtung.
+Voraussetzungen sind Git, npm und Node.js ab **22.16**. Node.js 24 LTS wird für die Übergabe empfohlen. Im Projektordner unter Windows:
 
-Anmeldung und Rechte werden am Server geprüft. Daten liegen in `storage/cockpit.sqlite`,
-Dateien in `storage/files`. Vorhandene JSON-Daten werden automatisch übernommen;
-bestehende Benutzer, Passwörter, Einträge und Dokumente bleiben erhalten.
-WVM und EPC haben gleiche Betriebsrechte, Dateien dürfen nur Besitzer oder Admins löschen.
+```powershell
+npm.cmd ci
+npm.cmd run start:test
+```
 
-`npm.cmd run check` prüft UI-Kernlogik, Synchronisierung, Rechte, Passwortspeicherung,
-Sicherheitsangriffe, Datenübernahme sowie Sicherung und Wiederherstellung.
-`npm.cmd run backup` erstellt eine manuelle Sicherung.
+Die isolierte Demo öffnet sich unter <http://localhost:4183>. Die Demo verwendet eine neue temporäre SQLite-Datenbank und sperrt den Mailversand. Für die Testadministration stehen `WVM-admin` und das Demo-Passwort `9876` zur Verfügung. Mit Strg+C beenden. In VS Code entspricht dies der Aufgabe **Cockpit: isolierte Demo starten**.
 
-Die lokale Demo bleibt verfügbar. Der getrennte Produktionsmodus startet über
-`npm run start:production` und verlangt HTTPS sowie sichere Admin-Konten. Zwei-Faktor-Anmeldung ist optional.
-Es wurde nichts bei einem externen Anbieter veröffentlicht.
+`npm.cmd start` startet den regulären Entwicklungsserver auf Port 4173 mit dem lokalen Bestand. Einzelheiten zu Datenpfaden, Testkonten und Ports stehen unter [Lokale Entwicklung](docs/LOCAL_DEVELOPMENT.md).
+
+## Projektaufbau
+
+| Pfad | Aufgabe |
+| --- | --- |
+| `src/` und `public/` | Browser-Anwendung, Ansichten, Dialoge, Stil und Bilder |
+| `server*.cjs` | HTTP, Zugriffsschutz, Betriebsfunktionen, PDF-Export und Speicherung |
+| `tests/` | Funktions-, Berechtigungs- und Integrationstests |
+| `tools/` | Demo, Sicherung, Migration und Veröffentlichung |
+| `docs/` | Bedienung, Rollen, Architektur, Datenbank und Hosting |
+
+Das Projekt verwendet JavaScript, Node.js, SQLite, PDFKit und Nodemailer. Der Browser lädt die Module direkt. Der tatsächliche Datenordner liegt unter `COCKPIT_DATA_DIR`. Er enthält Datenbank, Dateien und Schlüssel und ist bei Updates separat zu sichern.
+
+## Prüfen
+
+```powershell
+npm.cmd run check
+npm.cmd run check:syntax
+npm.cmd run check:format
+npm.cmd run check:repository
+```
+
+Die Tests verwenden eigene Datenverzeichnisse und lokale Testserver. Hosting-, SMTP- und Scanner-Tests sind unter [Lokale Entwicklung](docs/LOCAL_DEVELOPMENT.md) aufgeführt.
+
+## Unterlagen für die Übergabe
+
+- [Bedienung](docs/BEDIENUNG.md) und [Rollen und Rechte](docs/ROLLEN_UND_RECHTE.md)
+- [Architektur](docs/ARCHITECTURE.md) und [Datenbank, Sicherung und Wiederherstellung](docs/DATABASE.md)
+- [Konfiguration](docs/CONFIGURATION.md) und [E-Mail-Benachrichtigungen](docs/EMAIL_NOTIFICATIONS.md)
+- [Übergabe-Checkliste](docs/UEBERGABE.md), [Go-live-Prüfung](docs/GO_LIVE.md) und [manuelle Veröffentlichung auf Infomaniak](docs/INFOMANIAK_DEPLOYMENT.md)

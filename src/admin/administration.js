@@ -103,11 +103,8 @@ export function createAdministration({
     const f = data.folders.find((f) => f.id === id),
       children = descendants(id);
     if (!f) return;
-    const documentCount = data.documents.filter((d) =>
-      [id, ...children].includes(d.folderId),
-    ).length;
     show(
-      `<div class="modal-heading"><h2>Ordner löschen?</h2><button class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><p>«${esc(f.name)}», ${children.length} Unterordner und ${documentCount} Dokumente werden dauerhaft gelöscht. Bitte benötigte Dokumente vorher verschieben.</p></div><div class="modal-footer"><button class="secondary" id="folder-cancel">Abbrechen</button><button class="danger-button" id="folder-delete">Endgültig löschen</button></div>`,
+      `<div class="modal-heading"><h2>Ordner löschen?</h2><button class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><p>«${esc(f.name)}» und die enthaltenen Unterordner und Dokumente werden dauerhaft gelöscht. Bitte benötigte Dokumente vorher verschieben.</p></div><div class="modal-footer"><button class="secondary" id="folder-cancel">Abbrechen</button><button class="danger-button" id="folder-delete">Endgültig löschen</button></div>`,
     );
     document.querySelector("#folder-cancel").onclick = () => modal.close();
     document.querySelector("#folder-delete").onclick = () => {
@@ -123,18 +120,19 @@ export function createAdministration({
         modal.close();
     };
   }
-  function plantForm(sid) {
+  function plantForm(sid, back) {
     if (!isAdmin()) return;
+    const location = data.structure?.sites?.find((s) => s.id === sid);
+    const plants = data.plants.filter(
+      (plant) => plant.siteId === sid && !plant.deleted,
+    );
+    const plantRow = (p) =>
+      `<form class="plant-row" data-plant="${p.id}"><input name="plantName" aria-label="Anlagenname" value="${esc(p.name)}" required maxlength="100"><label class="check-label"><input name="active" type="checkbox" ${p.active ? "checked" : ""}> Aktiv</label><button class="secondary">Speichern</button><button type="button" class="danger plant-delete" data-delete-plant="${p.id}">Löschen</button></form>`;
     show(
-      `<div class="modal-heading"><div><h2>Anlagen verwalten</h2><p>${esc(data.structure?.sites?.find(s => s.id === sid)?.name || "Standort")}</p><p>Nur aktive Anlagen stehen für neue Einträge zur Auswahl.</p></div><button class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><form id="plant-add" class="plant-add"><label>Anlagenname<input name="plantName" placeholder="Zum Beispiel: Holzkessel 1" required maxlength="100"></label><button class="primary">Hinzufügen</button></form><div class="plant-list">${data.plants
-        .filter((p) => p.siteId === sid && !p.deleted)
-        .map(
-          (p) =>
-            `<form class="plant-row" data-plant="${p.id}"><input name="plantName" aria-label="Anlagenname" value="${esc(p.name)}" required maxlength="100"><label class="check-label"><input name="active" type="checkbox" ${p.active ? "checked" : ""}> Aktiv</label><button class="secondary">Speichern</button><button type="button" class="danger plant-delete" data-delete-plant="${p.id}">Löschen</button></form>`,
-        )
-        .join(
-          "",
-        )}</div><p class="muted">Deaktivierte Anlagen bleiben in bestehenden Logbucheinträgen erhalten.</p><p id="plant-error" role="alert"></p></div>`,
+      `<div class="modal-heading"><div><h2>Anlagen verwalten</h2><p>${esc(location?.name || "Standort")}</p></div><button class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body">
+        <form id="plant-add" class="plant-add"><label>Anlagenname<input name="plantName" required maxlength="100"></label><button class="primary">Hinzufügen</button></form>
+        <div class="plant-list">${plants.map(plantRow).join("") || '<p class="muted">Für diesen Standort sind noch keine Anlagen erfasst.</p>'}</div><p class="muted">Nur aktive Anlagen erscheinen in neuen Einträgen. Frühere Logbucheinträge behalten ihre Zuordnung.</p><p id="plant-error" role="alert"></p></div>`,
+      back,
     );
     const update = (form, id) => {
       const name = form.elements.plantName.value.trim();
@@ -168,13 +166,14 @@ export function createAdministration({
         }, "Anlage gespeichert.")
       ) {
         modal.close();
-        plantForm(sid);
+        plantForm(sid, back);
       }
     };
     document
       .querySelectorAll("[data-delete-plant]")
       .forEach(
-        (b) => (b.onclick = () => deletePlant(sid, b.dataset.deletePlant)),
+        (b) =>
+          (b.onclick = () => deletePlant(sid, b.dataset.deletePlant, back)),
       );
     document.querySelector("#plant-add").onsubmit = (e) => {
       e.preventDefault();
@@ -188,7 +187,7 @@ export function createAdministration({
         }),
     );
   }
-  function deletePlant(sid, id) {
+  function deletePlant(sid, id, back) {
     if (!isAdmin()) return;
     const p = data.plants.find((p) => p.id === id);
     show(
@@ -196,7 +195,7 @@ export function createAdministration({
     );
     document.querySelector("#plant-cancel").onclick = () => {
       modal.close();
-      plantForm(sid);
+      plantForm(sid, back);
     };
     document.querySelector("#plant-confirm").onclick = () => {
       if (
@@ -208,7 +207,7 @@ export function createAdministration({
         }, "Anlage gelöscht.")
       ) {
         modal.close();
-        plantForm(sid);
+        plantForm(sid, back);
       }
     };
   }

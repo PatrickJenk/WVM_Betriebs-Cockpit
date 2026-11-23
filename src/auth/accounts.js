@@ -1,8 +1,7 @@
-import { uuid } from "../services/ids.js";
+import { canLead, isAdministrator } from "./roles.js";
+export { isAdministrator } from "./roles.js";
 // Rollen und Formulare; Anmeldung und Berechtigungen prüft der Server.
 export const roles = ["Admin", "WVM", "EPC"];
-export const isAdministrator = (u) =>
-  ["Admin", "Administrator"].includes(u?.role);
 export function initializeAccounts(data) {
   if (data.accountVersion !== 2) {
     data.users = [
@@ -53,37 +52,39 @@ export function createAccounts({
   getAuthError,
   onLogin,
   onLogout,
-  setupMfa,
-  confirmMfa,
   getAudit,
   getPasswordMinimum,
-  getMfaEnabled,
-  onBeforeLogin,
+  editAccount,
+  manageAccount,
 }) {
+  function setUser(account) {
+    Object.assign(user, {
+      leadership: undefined,
+      systemRole: undefined,
+      systemPermissions: [],
+      backupAdmin: false,
+      ...account,
+    });
+  }
   function enter(chosen) {
-    if (chosen.mustSetupMfa) {
-      document.querySelector("#app").textContent =
-        "Bitte zuerst die Zwei-Faktor-Anmeldung einrichten.";
-      setupOwnMfa(() => enter(data.users.find((u) => u.id === chosen.id)));
-      return;
-    }
-    Object.assign(user, chosen);
+    sessionStorage.removeItem?.("cockpit-pending-account");
+    setUser(chosen);
     sessionStorage.setItem("cockpit-account", chosen.id);
-    onBeforeLogin?.();
     shell();
     onLogin?.();
   }
   function login() {
     Object.assign(user, { id: null, name: "", initials: "", role: null });
+    const pending =
+      authenticate &&
+      data.users.find(
+        (u) =>
+          u.id === sessionStorage.getItem("cockpit-account") &&
+          u.mustChangePassword,
+      );
+    if (pending) return firstPassword(pending);
     document.querySelector("#app").innerHTML =
       `<main class="login-page"><section class="login-card"><div class="partner-logos login-logos"><img class="marzili" src="/assets/marzili-logo.png" alt="WVM"><img class="ewb" src="/assets/ewb-logo.png" alt="ewb"></div><h1>Betriebs Cockpit</h1><form id="login-form"><label>Benutzername<input name="username" autocomplete="username" required></label><label>Passwort<input name="password" type="password" autocomplete="current-password" required></label><label class="check-label"><input id="show-login-password" type="checkbox"> Passwort anzeigen</label><p id="login-error" role="alert"></p><button class="primary">Anmelden</button></form><p class="muted">Geschützter Zugang</p></section></main>`;
-    if (getMfaEnabled?.())
-      document
-        .querySelector("#login-form")
-        .insertAdjacentHTML?.(
-          "afterbegin",
-          '<label>Zwei-Faktor-Code (falls eingerichtet)<input name="code" autocomplete="one-time-code" placeholder="Authenticator-Code oder Wiederherstellungscode"></label>',
-        );
     document.querySelector("#show-login-password").onchange = (event) => {
       document.querySelector("#login-form").elements.password.type = event
         .target.checked
@@ -93,75 +94,71 @@ export function createAccounts({
     document.querySelector("#login-form").onsubmit = (e) => {
       e.preventDefault();
       const f = e.currentTarget;
-      const authenticated = authenticate
-        ? authenticate(
-            f.elements.username.value.trim(),
-            f.elements.password.value,
-            f.elements.code?.value,
-          )
-        : null;
-      const chosen = data.users.find(
-        (u) =>
-          u.active !== false &&
-          u.name.toLowerCase() ===
-            f.elements.username.value.trim().toLowerCase() &&
-          (authenticate
-            ? authenticated && u.id === authenticated.id
-            : u.password === f.elements.password.value),
-      );
+      const name = f.elements.username.value.trim();
+      const password = f.elements.password.value;
+      const chosen = authenticate
+        ? authenticate(name, password)
+        : data.users.find(
+            (u) =>
+              u.active !== false &&
+              (u.initials.toLowerCase() === name.toLowerCase() ||
+                (!u.initialsLogin &&
+                  u.name.toLowerCase() === name.toLowerCase())) &&
+              u.password === password,
+          );
       if (!chosen) {
         document.querySelector("#login-error").textContent =
           getAuthError?.() || "Benutzername oder Passwort falsch.";
         return;
       }
       if (!chosen.mustChangePassword) return enter(chosen);
-      const minimum = getPasswordMinimum?.() || 8;
-      sessionStorage.setItem("cockpit-pending-account", chosen.id);
-      document.querySelector("#app").innerHTML =
-        `<main class="login-page"><section class="login-card"><h1>Eigenes Passwort festlegen</h1><p>${esc(chosen.name)} · Bitte ersetze das Startpasswort.</p><form id="password-form"><label>Neues Passwort<input name="password" type="password" minlength="${minimum}" autocomplete="new-password" required></label><label>Passwort wiederholen<input name="confirmation" type="password" autocomplete="new-password" required></label><label class="check-label"><input id="show-new-password" type="checkbox"> Passwort anzeigen</label><p id="password-error" role="alert"></p><button class="primary">Speichern und anmelden</button></form></section></main>`;
-      document.querySelector("#show-new-password").onchange = (event) => {
-        const form = document.querySelector("#password-form");
-        form.elements.password.type = form.elements.confirmation.type = event
-          .target.checked
-          ? "text"
-          : "password";
-      };
-      document.querySelector("#password-form").onsubmit = (event) => {
-        event.preventDefault();
-        const f = event.currentTarget,
-          pw = f.elements.password.value;
-        if (
-          pw.length < minimum ||
-          pw === "ChangeMe123" ||
-          pw !== f.elements.confirmation.value
-        ) {
+      firstPassword(chosen);
+    };
+  }
+  function firstPassword(chosen) {
+    const minimum = getPasswordMinimum?.() || 8;
+    sessionStorage.setItem("cockpit-pending-account", chosen.id);
+    document.querySelector("#app").innerHTML =
+      `<main class="login-page"><section class="login-card"><h1>Eigenes Passwort festlegen</h1><p>${esc(chosen.name)} · Bitte ersetze das Startpasswort.</p><form id="password-form"><label>Neues Passwort<input name="password" type="password" minlength="${minimum}" autocomplete="new-password" required></label><label>Passwort wiederholen<input name="confirmation" type="password" autocomplete="new-password" required></label><label class="check-label"><input id="show-new-password" type="checkbox"> Passwort anzeigen</label><p id="password-error" role="alert"></p><button class="primary">Speichern und anmelden</button><button type="button" class="secondary" id="cancel-password-change">Abmelden</button></form></section></main>`;
+    document.querySelector("#cancel-password-change").onclick = logout;
+    document.querySelector("#show-new-password").onchange = (event) => {
+      const form = document.querySelector("#password-form");
+      form.elements.password.type = form.elements.confirmation.type = event
+        .target.checked
+        ? "text"
+        : "password";
+    };
+    document.querySelector("#password-form").onsubmit = (event) => {
+      event.preventDefault();
+      const f = event.currentTarget,
+        pw = f.elements.password.value;
+      if (pw.length < minimum || pw !== f.elements.confirmation.value) {
+        document.querySelector("#password-error").textContent =
+          `Mindestens ${minimum} Zeichen, kein Startpasswort und identische Eingaben erforderlich.`;
+        return;
+      }
+      if (changePassword) {
+        try {
+          const saved = changePassword(pw);
+          if (!saved || saved.mustChangePassword)
+            throw Error("Passwort konnte nicht gespeichert werden.");
+          sessionStorage.removeItem("cockpit-pending-account");
+          enter(saved);
+          toast("Eigenes Passwort dauerhaft gespeichert.");
+        } catch (error) {
           document.querySelector("#password-error").textContent =
-            `Mindestens ${minimum} Zeichen, kein Startpasswort und identische Eingaben erforderlich.`;
-          return;
+            error.message ||
+            "Passwort konnte nicht gespeichert werden. Bitte erneut versuchen.";
         }
-        if (changePassword) {
-          try {
-            const saved = changePassword(pw);
-            if (!saved || saved.mustChangePassword)
-              throw Error("Passwort konnte nicht gespeichert werden.");
-            sessionStorage.removeItem("cockpit-pending-account");
-            enter(saved);
-            toast("Eigenes Passwort dauerhaft gespeichert.");
-          } catch (error) {
-            document.querySelector("#password-error").textContent =
-              error.message ||
-              "Passwort konnte nicht gespeichert werden. Bitte erneut versuchen.";
-          }
-          return;
-        }
-        const old = { ...chosen };
-        Object.assign(chosen, { password: pw, mustChangePassword: false });
-        if (!save()) {
-          Object.assign(chosen, old);
-          return;
-        }
-        enter(chosen);
-      };
+        return;
+      }
+      const old = { ...chosen };
+      Object.assign(chosen, { password: pw, mustChangePassword: false });
+      if (!save()) {
+        Object.assign(chosen, old);
+        return;
+      }
+      enter(chosen);
     };
   }
   function logout() {
@@ -180,6 +177,7 @@ export function createAccounts({
         plants: [],
       });
     sessionStorage.setItem("cockpit-account", "signed-out");
+    sessionStorage.removeItem?.("cockpit-pending-account");
     if (modal.open) modal.close();
     Object.assign(user, { id: null, name: "", initials: "", role: null });
     login();
@@ -221,164 +219,209 @@ export function createAccounts({
     toast(message);
     return true;
   }
-  function temporaryPassword() {
-    const bytes = new Uint8Array(18);
-    crypto.getRandomValues(bytes);
-    return Array.from(
-      bytes,
-      (b) =>
-        "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#"[b % 58],
-    ).join("");
+  function fields(account = {}) {
+    const yesNo = (value) => options(["Ja", "Nein"], value ? "Ja" : "Nein");
+    const roles = [
+      ["roleUser", "User", account.userRole ?? true],
+      ["roleLeadership", "Leitung", canLead(account)],
+      ["roleAdmin", "Admin", isAdministrator(account)],
+    ];
+    return `<label>Name<input name="accountName" value="${esc(account.name || "")}" required maxlength="100"></label>
+      <label>E-Mail<input name="email" type="email" value="${esc(account.email || "")}" required maxlength="254"></label>
+      <label>Kürzel / Benutzername<input name="initials" value="${esc(account.initials || "")}" required maxlength="5"></label>
+      <label>Unternehmen<select name="company" required><option value="">Unternehmen auswählen</option>${options(["WVM", "EPC"], account.company)}</select></label>
+      <details class="account-role-picker full"><summary>Rollen</summary><fieldset aria-label="Rollen, mindestens eine auswählen">${roles.map(([name, label, checked]) => `<label class="check-label"><input name="${name}" type="checkbox" value="${label}" ${checked ? "checked" : ""}>${label}</label>`).join("")}</fieldset></details>
+      ${account.id ? `<label>Aktiv<select name="active" required>${yesNo(account.active !== false)}</select></label>` : ""}`;
   }
-  function setupOwnMfa(afterEnabled) {
-    show(
-      '<div class="modal-heading"><h2>Zwei-Faktor-Anmeldung</h2><button class="close icon-button">✕</button></div><div class="form-body"><p>Für das öffentliche Hosting erforderlich. Eine Authenticator-App bereithalten.</p><form id="mfa-setup"><label>Aktuelles Passwort<input name="password" type="password" autocomplete="current-password" required></label><label>Aktueller Zwei-Faktor-Code (falls bereits eingerichtet)<input name="code" autocomplete="one-time-code"></label><p id="mfa-error" role="alert"></p><button class="primary">Einrichtung starten</button></form></div>',
-    );
-    document.querySelector("#mfa-setup").onsubmit = (event) => {
-      event.preventDefault();
-      const f = event.currentTarget;
-      try {
-        const result = setupMfa(
-          f.elements.password.value,
-          f.elements.code.value,
-        );
-        show(
-          `<div class="modal-heading"><h2>Authenticator verbinden</h2><button class="close icon-button">✕</button></div><div class="form-body"><p>In der Authenticator-App manuell einen zeitbasierten Eintrag für Wärme-Cockpit hinzufügen. Diesen Schlüssel eintragen:</p><p><code>${esc(result.secret)}</code></p><form id="mfa-confirm"><label>Sechsstelliger Code aus der App<input name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></label><p id="mfa-error" role="alert"></p><button class="primary">Aktivieren</button></form></div>`,
-        );
-        document.querySelector("#mfa-confirm").onsubmit = (event) => {
-          event.preventDefault();
-          try {
-            const codes = confirmMfa(event.currentTarget.elements.code.value);
-            afterEnabled?.();
-            show(
-              `<div class="modal-heading"><h2>Zwei-Faktor-Anmeldung aktiv</h2></div><div class="form-body"><p>Diese einmal verwendbaren Wiederherstellungscodes jetzt sicher und getrennt vom Passwort aufbewahren. Sie werden nur einmal angezeigt.</p><pre>${codes.map(esc).join("\n")}</pre></div><div class="modal-footer"><button class="close primary">Gesichert – Schliessen</button></div>`,
-            );
-          } catch (error) {
-            document.querySelector("#mfa-error").textContent = error.message;
-          }
-        };
-      } catch (error) {
-        document.querySelector("#mfa-error").textContent = error.message;
-      }
-    };
-  }
-  function manage() {
-    if (!isAdministrator(user)) return;
-    show(
-      `<div class="modal-heading"><h2>Benutzer verwalten</h2><button class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><form id="account-add" class="form-grid"><label>Benutzername / Name<input name="accountName" required maxlength="100"></label><label>Kürzel<input name="initials" required maxlength="5"></label><label>Rolle / Unternehmen<select name="role">${options(roles, "WVM")}</select></label><p>Zufälliges Startpasswort · Beim ersten Login ändern.</p><button class="primary full">Benutzer hinzufügen</button></form><p id="account-error" role="alert"></p><div class="account-list">${data.users.map((u) => `<div class="account-row"><span class="avatar">${esc(u.initials)}</span><div><b>${esc(u.name)}</b><small>${esc(u.role)}</small></div><button class="secondary" data-reset-user="${esc(u.id)}">Passwort zurücksetzen</button>${u.id !== user.id ? `<button class="danger-button" data-delete-user="${esc(u.id)}">Löschen</button>` : ""}</div>`).join("")}</div></div>`,
-    );
-    const accountForm = document.querySelector("#account-add");
-    const note = accountForm.querySelector?.("p");
-    if (note)
-      note.textContent =
-        "Ein zufälliges Startpasswort wird einmal angezeigt. Beim ersten Login ändern.";
-    accountForm.insertAdjacentHTML?.(
-      "afterend",
-      '<p><button class="secondary" id="security-mfa">Meine Zwei-Faktor-Anmeldung einrichten</button> <button class="secondary" id="security-audit">Sicherheitsprotokoll</button></p>',
-    );
-    const mfaButton = document.querySelector("#security-mfa"),
-      auditButton = document.querySelector("#security-audit");
-    if (!getMfaEnabled?.()) mfaButton?.remove?.();
-    if (mfaButton) mfaButton.onclick = () => setupOwnMfa();
-    if (auditButton)
-      auditButton.onclick = () => {
-        try {
-          const events = getAudit();
-          show(
-            `<div class="modal-heading"><h2>Sicherheitsprotokoll</h2><button class="close icon-button">✕</button></div><div class="form-body"><p>Die letzten 500 Ereignisse. Es werden keine Passwörter gespeichert.</p>${events.map((e) => `<p><b>${esc(e.at)} · ${esc(e.actor || "Unbekannt")}</b><br>${esc(e.action)}<br><small>${esc(e.details)}</small></p>`).join("")}</div>`,
-          );
-        } catch (error) {
-          toast(error.message);
-        }
-      };
-    document.querySelector("#account-add").onsubmit = (e) => {
-      e.preventDefault();
-      const f = e.currentTarget,
-        name = f.elements.accountName.value.trim(),
-        initials = f.elements.initials.value.trim().toUpperCase(),
-        role = f.elements.role.value;
-      const startPassword = temporaryPassword();
-      if (!name || !initials || !roles.includes(role)) return;
-      if (
-        data.users.some(
-          (u) =>
-            u.name.toLowerCase() === name.toLowerCase() ||
-            u.initials.toUpperCase() === initials,
-        )
-      ) {
-        document.querySelector("#account-error").textContent =
-          "Name oder Kürzel bereits vergeben.";
-        return;
-      }
-      const committed = commit(
-        () =>
-          data.users.push({
-            id: uuid(),
-            name,
-            initials,
-            role,
-            company: role === "Admin" ? "WVM" : role,
-            password: startPassword,
-            mustChangePassword: true,
-          }),
-        "Benutzer hinzugefügt.",
+  function bindRolePicker(form) {
+    const picker = form.querySelector(".account-role-picker");
+    const update = () => {
+      const selected = [...picker.querySelectorAll("input:checked")].map(
+        (input) => input.value,
       );
-      if (committed && !data.users.find((u) => u.name === name)?.password)
-        show(
-          `<div class="modal-heading"><h2>Startpasswort für ${esc(name)}</h2></div><div class="form-body"><p>Dieses Passwort wird nur jetzt angezeigt. Sicher weitergeben; beim ersten Login muss es geändert werden.</p><p><code>${esc(startPassword)}</code></p></div><div class="modal-footer"><button class="close primary">Schliessen</button></div>`,
-        );
+      picker.querySelector("summary").textContent =
+        "Rollen · " + (selected.length ? selected.join(", ") : "Auswählen");
     };
-    document.querySelectorAll("[data-reset-user]").forEach(
-      (b) =>
-        (b.onclick = () => {
-          const u = data.users.find((u) => u.id === b.dataset.resetUser);
-          const startPassword = temporaryPassword();
-          const committed = commit(
-            () =>
-              Object.assign(u, {
-                password: startPassword,
-                mustChangePassword: true,
-              }),
-            "Passwort zurückgesetzt.",
-          );
-          if (!committed) return;
-          if (u.id === user.id) {
-            alert("Neues Startpasswort (nur jetzt sichtbar): " + startPassword);
-            logout();
-          } else if (!data.users.find((x) => x.id === u.id)?.password)
-            show(
-              `<div class="modal-heading"><h2>Neues Startpasswort für ${esc(u.name)}</h2></div><div class="form-body"><p>Nur jetzt sichtbar. Beim nächsten Login ändern.</p><p><code>${esc(startPassword)}</code></p></div><div class="modal-footer"><button class="close primary">Schliessen</button></div>`,
-            );
-        }),
+    picker.onchange = update;
+    update();
+  }
+  function formData(form, feedback) {
+    const f = form.elements;
+    if (
+      !f.roleUser.checked &&
+      !f.roleAdmin.checked &&
+      !f.roleLeadership.checked
+    ) {
+      const picker = form.querySelector(".account-role-picker");
+      picker.open = true;
+      f.roleUser.focus();
+      feedback.textContent = "Bitte mindestens eine Rolle auswählen.";
+      return null;
+    }
+    return {
+      name: f.accountName.value,
+      initials: f.initials.value,
+      email: f.email.value,
+      company: f.company.value,
+      userRole: f.roleUser.checked,
+      admin: f.roleAdmin.checked,
+      leadership: f.roleLeadership.checked,
+      ...(f.active && { active: f.active.value === "Ja" }),
+    };
+  }
+  async function saveAccount(path, method, values, button, feedback) {
+    button.disabled = true;
+    feedback.textContent =
+      path.endsWith("/invitation") || !path
+        ? "E-Mail wird versendet …"
+        : "Änderungen werden gespeichert …";
+    try {
+      const result = await manageAccount(path, method, values);
+      const message =
+        result.delivery === "failed"
+          ? `Konto gespeichert. ${result.deliveryError} Verwende «Erneut senden» bei diesem Konto.`
+          : result.delivery === "sent"
+            ? "Startpasswort an den Mailserver übergeben."
+            : "Benutzer gespeichert.";
+      if (modal.open && feedback.isConnected)
+        manage(result.delivery === "failed" ? message : "");
+      if (result.delivery !== "failed") toast(message);
+    } catch (error) {
+      feedback.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+  function edit(account) {
+    show(`<div class="modal-heading"><h2>Benutzer bearbeiten</h2><button class="close icon-button" aria-label="Schliessen">✕</button></div>
+      <form id="account-edit"><div class="form-body form-grid">${fields(account)}<p class="full" id="account-edit-error" role="alert"></p></div>
+      <div class="modal-footer"><button type="button" class="secondary" id="account-back">Zurück</button><button class="primary" type="submit">Speichern</button></div></form>`);
+    const form = document.querySelector("#account-edit");
+    bindRolePicker(form);
+    document.querySelector("#account-back").onclick = () => manage();
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      const feedback = document.querySelector("#account-edit-error");
+      const values = formData(form, feedback);
+      if (!values) return;
+      saveAccount(
+        "/" + account.id,
+        "PUT",
+        values,
+        form.querySelector('button[type="submit"]'),
+        feedback,
+      );
+    };
+  }
+  let managementBack;
+  function manage(message = "", back = managementBack) {
+    if (!isAdministrator(user)) return;
+    managementBack = back;
+    const delivery = {
+      sending: "Versand ausstehend",
+      failed: "Versand fehlgeschlagen",
+      required: "Versand erforderlich",
+      sent: "Startpasswort versendet",
+    };
+    show(
+      `<div class="modal-heading"><h2>Benutzer verwalten</h2><button class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body">
+      <form id="account-add" class="form-grid">${fields()}<p class="full">Das Startpasswort wird per E-Mail versendet und muss bei der ersten Anmeldung geändert werden.</p><button type="submit" class="primary full">Benutzer hinzufügen</button></form>
+      <p id="account-error" role="alert">${esc(message)}</p><p><button class="secondary" id="security-audit">Sicherheitsprotokoll</button></p>
+      <div class="account-list">${data.users
+        .map(
+          (u) =>
+            `<div class="account-row"><span class="avatar">${esc(u.initials)}</span><div><b>${esc(u.name)}</b><small>${esc([u.company, !u.backupAdmin && u.userRole !== false ? "User" : "", u.backupAdmin ? "Backup-Admin" : u.systemRole === "main" ? "Hauptadministrator" : isAdministrator(u) ? "Admin" : "", canLead(u) ? "Leitung" : "", u.active === false ? "Inaktiv" : "", delivery[u.invitationStatus]].filter(Boolean).join(" · "))}</small></div>${
+              u.backupAdmin
+                ? ""
+                : `<button class="secondary" data-edit-user="${esc(u.id)}">Bearbeiten</button>
+      ${editAccount ? `<button class="secondary" data-user-settings="${esc(u.id)}">E-Mail &amp; Rechte</button>` : ""}
+      ${u.id !== user.id ? `<button class="secondary" data-reset-user="${esc(u.id)}" ${u.active === false ? "disabled" : ""}>${["failed", "sending", "required"].includes(u.invitationStatus) ? "Erneut senden" : "Passwort zurücksetzen"}</button><button class="danger-button" data-delete-user="${esc(u.id)}">Löschen</button>` : ""}`
+            }</div>`,
+        )
+        .join("")}</div></div>`,
+      back,
     );
-    document.querySelectorAll("[data-delete-user]").forEach(
-      (b) =>
-        (b.onclick = () => {
-          const u = data.users.find((u) => u.id === b.dataset.deleteUser);
-          if (!u || u.id === user.id) return;
-          if (
-            !confirm(
-              `Benutzer ${u.name} löschen? Logbucheinträge bleiben erhalten.`,
-            )
+    const form = document.querySelector("#account-add");
+    bindRolePicker(form);
+    const feedback = document.querySelector("#account-error");
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      const values = formData(form, feedback);
+      if (!values) return;
+      saveAccount(
+        "",
+        "POST",
+        values,
+        form.querySelector('button[type="submit"]'),
+        feedback,
+      );
+    };
+    document.querySelector("#security-audit").onclick = () => {
+      try {
+        const events = getAudit();
+        show(
+          `<div class="modal-heading"><h2>Sicherheitsprotokoll</h2><button class="close icon-button" aria-label="Schliessen">✕</button></div><div class="form-body"><p>Die letzten 500 Ereignisse. Es werden keine Passwörter gespeichert.</p>${events.map((e) => `<p><b>${esc(e.at)} · ${esc(e.actor || "Unbekannt")}</b><br>${esc(e.action)}<br><small>${esc(e.details)}</small></p>`).join("")}</div>`,
+          () => manage(),
+        );
+      } catch (error) {
+        toast(error.message);
+      }
+    };
+    document.querySelectorAll("[data-edit-user]").forEach((button) => {
+      button.onclick = () =>
+        edit(data.users.find((u) => u.id === button.dataset.editUser));
+    });
+    document.querySelectorAll("[data-user-settings]").forEach((button) => {
+      button.onclick = () =>
+        editAccount(button.dataset.userSettings, () => manage());
+    });
+    document.querySelectorAll("[data-reset-user]").forEach((button) => {
+      button.onclick = () => {
+        const account = data.users.find(
+          (u) => u.id === button.dataset.resetUser,
+        );
+        if (!account.email) {
+          feedback.textContent =
+            "Bitte zuerst eine geschäftliche E-Mail-Adresse hinterlegen.";
+          return;
+        }
+        if (
+          confirm(
+            `Neues Startpasswort an ${account.email} senden? Das bisherige Passwort wird dabei ungültig.`,
           )
-            return;
+        )
+          saveAccount(
+            "/" + account.id + "/invitation",
+            "POST",
+            { email: account.email },
+            button,
+            feedback,
+          );
+      };
+    });
+    document.querySelectorAll("[data-delete-user]").forEach((button) => {
+      button.onclick = () => {
+        const account = data.users.find(
+          (u) => u.id === button.dataset.deleteUser,
+        );
+        if (
+          confirm(
+            `Benutzer ${account.name} löschen? Logbucheinträge bleiben erhalten.`,
+          )
+        )
           commit(() => {
-            data.users = data.users.filter((x) => x.id !== u.id);
+            data.users = data.users.filter((u) => u.id !== account.id);
           }, "Benutzer gelöscht.");
-        }),
-    );
+      };
+    });
   }
   function restore() {
     const id = sessionStorage.getItem("cockpit-account"),
       chosen = data.users.find(
-        (u) =>
-          u.id === id &&
-          u.active !== false &&
-          !u.mustChangePassword &&
-          !u.mustSetupMfa,
+        (u) => u.id === id && u.active !== false && !u.mustChangePassword,
       );
     if (!chosen) return false;
-    Object.assign(user, chosen);
+    setUser(chosen);
     return true;
   }
   return { login, logout, manage, restore, ownPassword };

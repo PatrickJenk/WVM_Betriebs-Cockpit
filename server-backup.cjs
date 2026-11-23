@@ -33,6 +33,20 @@ function backup(label = "manual") {
     };
     write("state.json", JSON.stringify(state));
     write(
+      "collaboration.json",
+      JSON.stringify(require("./server-collaboration.cjs").exportData()),
+    );
+    write(
+      "leadership.json",
+      JSON.stringify({
+        meetings: store.db
+          .prepare("SELECT id,json FROM leadership_meetings")
+          .all(),
+        tasks: store.db.prepare("SELECT * FROM leadership_tasks").all(),
+        audit: store.db.prepare("SELECT * FROM leadership_audit").all(),
+      }),
+    );
+    write(
       "uploads.json",
       JSON.stringify(store.db.prepare("SELECT * FROM uploads").all()),
     );

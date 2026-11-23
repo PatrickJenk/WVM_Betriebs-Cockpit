@@ -24,6 +24,7 @@ const hash = (password) => {
 };
 let child;
 let base;
+let childOutput;
 const origin = "https://betrieb.waermeverbund.ch";
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 function unpack(archive, target) {
@@ -82,6 +83,7 @@ async function call(url, method = "GET", payload, session = {}, headers = {}) {
 }
 async function start(directory, port) {
   let log = "";
+  childOutput = () => log;
   child = spawn(process.execPath, ["server-hosting.cjs"], {
     cwd: directory,
     env: {
@@ -195,10 +197,18 @@ async function stop() {
   const directory = path.join(fixture, "unpacked");
   const names = unpack(result.archive, directory);
   assert.ok(names.includes("hosting-data/cockpit.sqlite"));
+  assert.ok(names.includes("src/data/control-round-examples.json"));
   assert.ok(
     !names.some((n) =>
       /Einrichtung-NUR|before-infomaniak|node_modules|\.git\//.test(n),
     ),
+  );
+  // Use the installed dependencies in the disposable unpacked directory.
+  // The real deployment installs them from the packaged lockfile.
+  fs.symlinkSync(
+    path.join(project, "node_modules"),
+    path.join(directory, "node_modules"),
+    "junction",
   );
   assert.ok(
     fs
@@ -297,13 +307,19 @@ async function stop() {
     ).status,
     200,
   );
+  let running = false;
   for (let i = 0; i < 80; i++) {
     try {
       const r = await call("/api/session");
-      if (r.status === 200) break;
+      if (r.status === 200) {
+        running = true;
+        break;
+      }
     } catch {}
+    if (child.exitCode !== null) break;
     await wait(100);
   }
+  assert.ok(running, "Hosting start after setup failed: " + childOutput());
   const admin = {};
   assert.equal(
     (
@@ -336,6 +352,14 @@ async function stop() {
   );
   const online = await call("/api/state", "GET", undefined, admin);
   assert.equal(online.status, 200);
+  assert.equal(
+    (await call("/api/sites/eiger/control-form", "GET", undefined, admin))
+      .status,
+    200,
+  );
+  const viewer = await call("/vendor/pdfjs/build/pdf.mjs", "HEAD");
+  assert.equal(viewer.status, 200);
+  assert.match(viewer.headers.get("content-type"), /^text\/javascript/);
   assert.equal(online.value.data.documents.length, 1);
   assert.equal(online.value.data.users[0].hostingPasswordChangeRequired, false);
   assert.equal(
