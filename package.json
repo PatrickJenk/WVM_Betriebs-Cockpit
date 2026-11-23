@@ -10,6 +10,7 @@
     "format": "prettier --write \"src/**/*.js\" \"src/**/*.css\" \"public/*.js\" \"public/*.html\" \"tests/*.cjs\" \"*.cjs\" \"tools/*.cjs\" package.json .vscode",
     "start:lan": "node --watch server.cjs --lan",
     "start:production": "node --env-file-if-exists=.env.production server-hosting.cjs",
+    "hosting:init": "node tools/init-production.cjs",
     "hosting:package": "node tools/package-infomaniak.cjs",
     "check:hosting": "node tests/hosting.cjs",
     "check:hosting:scanner": "node tests/hosting-scanner.cjs",
