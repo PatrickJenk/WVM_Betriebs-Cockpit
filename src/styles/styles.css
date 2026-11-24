@@ -2777,3 +2777,20 @@ textarea {
     height: 56px;
   }
 }
+
+.jourfix-people {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  margin-bottom: 1rem;
+}
+.jourfix-table td {
+  min-width: 8rem;
+  vertical-align: top;
+}
+.jourfix-table td:last-child {
+  min-width: 0;
+}
+.jourfix-table label {
+  white-space: nowrap;
+}

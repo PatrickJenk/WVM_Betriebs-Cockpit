@@ -187,6 +187,23 @@ let server;
   );
   assert.equal(photo.headers.get("content-type"), "image/png");
   assert.deepEqual(photo.value, png);
+  await ok(
+    "contacts/reorder-test",
+    "PUT",
+    { ...c, organization: "EWB" },
+    "member",
+  );
+  const order = { organization: "EWB", ids: ["reorder-test", "test"] };
+  assert.equal(
+    (await call("contacts/order", "PUT", order, "member")).status,
+    403,
+  );
+  await ok("contacts/order", "PUT", order, "admin2");
+  const orderedContacts = (await ok("contacts", "GET", undefined, "member"))
+    .contacts;
+  assert.equal(orderedContacts.find((c) => c.id === "reorder-test").order, 0);
+  assert.equal(orderedContacts.find((c) => c.id === "test").order, 1);
+  await ok("contacts/reorder-test", "DELETE", { version: 2 }, "member");
   async function mutate(fn, who = "main", expected = 200) {
     const s = await ok("state", "GET", undefined, who);
     fn(s.data);
@@ -402,7 +419,7 @@ let server;
     body: JSON.stringify({ version: 2 }),
   });
   assert.equal(noCsrf.status, 403);
-  await ok("contacts/test", "DELETE", { version: 2 });
+  await ok("contacts/test", "DELETE", { version: 3 });
   assert.equal((await ok("contacts")).contacts.length, 0);
   await ok("contacts/test", "PUT", { ...c, imageId: image.id });
   const backup = require("../server-backup.cjs").backup();

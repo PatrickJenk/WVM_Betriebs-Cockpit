@@ -4,7 +4,7 @@
 
 Das Dashboard führt zu den offenen, überfälligen und diese Woche erfassten Arbeiten. Im Logbuch lassen sich Einträge nach Standort, Anlage, Status, Tätigkeit, Ersteller, Zuständigkeit und Zeitraum filtern. Über **Archiv öffnen** erreichst du erledigte Einträge. Ein neuer Eintrag kann auf ein früheres Ereignisdatum gesetzt und einer Person zugewiesen werden. Weitere Empfänger können in Kopie aufgenommen werden.
 
-**Dokumentationen** enthält verbundübergreifende Anleitungen und Unterlagen. **Betriebspersonal** enthält das Kontaktverzeichnis. Die Pflege der Kontakte ist Aufgabe von Konten mit Leitung. Unter **Wärmeverbünde** öffnest du den Verbund und danach die Heizzentrale oder Unterstation.
+**Dokumentationen** enthält hochgeladene verbundübergreifende Anleitungen und Unterlagen. **Betriebspersonal** enthält das Kontaktverzeichnis. Die Pflege der Kontakte ist Aufgabe von Konten mit Leitung. Unter **Wärmeverbünde** öffnest du den Verbund und danach die Heizzentrale oder Unterstation.
 
 ## Kontrollrundgänge
 
@@ -27,6 +27,8 @@ Das Register **Dokumente** einer Station enthält die lokale Ablage. Einen Ordne
 
 Admins können **Anlagen verwalten** und die Register oder Ordner der Station pflegen. Über **Cockpit verwalten** erreichen Admins die Navigation, Benutzerverwaltung und, mit entsprechender Berechtigung, den E-Mail-Versand.
 
-## Austausch EPC + WVM
+## Betriebsführung
 
-Konten mit Leitung sehen den Bereich **Betriebsführung**. Dort lassen sich Sitzungen vorbereiten, Aufgaben und Pendenzen besprechen und abgeschlossene Protokolle als PDF abrufen. Einzelheiten zu allen Zugängen stehen in der [Rollenübersicht](ROLLEN_UND_RECHTE.md).
+Admins sehen **Austausch EPC + WVM** und **JF WVM**. Unter **Zugriff und Word-Vorlage verwalten** geben sie Personen den jeweiligen Sitzungsbereich frei. Für den bisherigen Austausch gilt das Leitungsrecht, solange keine eigene Zugriffsliste gespeichert ist. Fragen aus einer hochgeladenen DOCX-Datei erscheinen als editierbarer Text in neuen Entwürfen.
+
+Über **Jourfix vorbereiten** wird ein gemeinsamer Entwurf geöffnet. Alle Personen mit Zugriff können ihn bearbeiten und speichern. Beim **Jourfix abschliessen** wird das PDF im vertraulichen Sitzungsarchiv gespeichert. Für ausgewählte beteiligte Personen mit Zugriff und hinterlegter Adresse wird der Versand vorgemerkt. Der automatische E-Mail-Versand muss dafür aktiv sein. **JF WVM** übernimmt unerledigte Pendenzen in den nächsten Entwurf.

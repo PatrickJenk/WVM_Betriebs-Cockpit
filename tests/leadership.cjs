@@ -71,6 +71,7 @@ async function operational(token, change) {
     { id: "epc", name: "EPC", initials: "EP", role: "EPC" },
   ].map((u) => ({
     ...u,
+    email: u.id + "@example.test",
     passwordHash,
     mustChangePassword: false,
     active: true,
@@ -317,6 +318,99 @@ async function operational(token, change) {
   );
   assert.ok(third.items.some((i) => i.id === t.id));
   assert.ok(!third.items.some((i) => i.id === "seed-1"));
+  const route = "/leadership/jourfix/wvm";
+  assert.deepEqual(
+    (await ok("/leadership/jourfix", "GET", undefined, admin)).access,
+    ["epc", "wvm"],
+  );
+  assert.equal((await call(route, "GET", undefined, epc)).status, 404);
+  assert.equal(
+    (await call(route + "/settings", "PUT", { access: ["epc"] }, wvm)).status,
+    404,
+  );
+  const { zip } = require("../tools/zip.cjs");
+  const template = path.join(root, "vorlage.docx");
+  zip(template, [
+    {
+      name: "word/document.xml",
+      bytes: Buffer.from(
+        "<w:document><w:p><w:r><w:t>Welche Arbeiten sind offen?</w:t></w:r></w:p></w:document>",
+      ),
+    },
+  ]);
+  await ok(
+    route + "/settings",
+    "PUT",
+    { access: ["epc"], template: fs.readFileSync(template).toString("base64") },
+    admin,
+  );
+  assert.deepEqual(
+    (await ok("/state", "GET", undefined, epc)).data.jourfixAccess,
+    ["wvm"],
+  );
+  const draft = await ok(route, "POST", undefined, epc);
+  assert.equal(draft.topics, "Welche Arbeiten sind offen?");
+  assert.equal(
+    (await call("/leadership/jourfix/epc/" + draft.id, "GET", undefined, admin))
+      .status,
+    404,
+  );
+  const payload = {
+    ...draft,
+    time: "09:15",
+    people: [{ id: "epc", status: "Anwesend", mail: true }],
+    items: [
+      {
+        title: "Offener Eintrag",
+        responsible: "Betrieb",
+        status: "Terminieren",
+        due: "2026-12-31",
+        networks: ["marzili", "buchsee"],
+      },
+      {
+        title: "Erledigt",
+        responsible: "",
+        status: "Erledigt",
+        due: "",
+        networks: ["*"],
+      },
+    ],
+  };
+  const save = await ok(route + "/" + draft.id, "PUT", payload, admin);
+  assert.equal(
+    (await call(route + "/" + draft.id, "PUT", payload, epc)).status,
+    409,
+  );
+  const close = await ok(route + "/" + draft.id + "/close", "POST", save, epc);
+  assert.equal(close.queued, 1);
+  const protocol = await ok(
+    route + "/" + draft.id + "/pdf",
+    "GET",
+    undefined,
+    epc,
+  );
+  assert.equal(protocol.subarray(0, 5).toString(), "%PDF-");
+  assert.equal(
+    (await call(route + "/" + draft.id + "/close", "POST", save, epc)).status,
+    409,
+  );
+  assert.equal(
+    store.db
+      .prepare("SELECT count(*) AS n FROM mail_outbox WHERE entry_id=?")
+      .get(draft.id).n,
+    1,
+  );
+  const nextDraft = await ok(route, "POST", undefined, epc);
+  assert.deepEqual(
+    nextDraft.items.map((p) => p.title),
+    ["Offener Eintrag"],
+  );
+  assert.deepEqual(nextDraft.items[0].networks, ["marzili", "buchsee"]);
+  await ok(route + "/settings", "PUT", { access: [] }, admin);
+  assert.equal(
+    (await call(route + "/" + draft.id + "/pdf", "GET", undefined, epc)).status,
+    404,
+  );
   // Private archive and exact PDF bytes survive backup/restore.
   const backup = spawnSync(
     process.execPath,
@@ -340,6 +434,13 @@ async function operational(token, change) {
       .pdf,
     null,
     "PDF is not stored on the website",
+  );
+  assert.deepEqual(
+    Buffer.from(
+      db.prepare("SELECT pdf FROM leadership_meetings WHERE id=?").get(draft.id)
+        .pdf,
+    ),
+    protocol,
   );
   const restoredMeeting = db
     .prepare("SELECT json,pdf FROM leadership_meetings WHERE id=?")

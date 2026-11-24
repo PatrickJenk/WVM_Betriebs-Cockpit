@@ -51,8 +51,12 @@ try {
       );
       for (const row of leadership.meetings)
         store.db
-          .prepare("INSERT INTO leadership_meetings(id,json) VALUES(?,?)")
-          .run(row.id, row.json);
+          .prepare("INSERT INTO leadership_meetings(id,json,pdf) VALUES(?,?,?)")
+          .run(
+            row.id,
+            row.json,
+            row.pdf ? Buffer.from(row.pdf, "base64") : null,
+          );
       for (const row of leadership.tasks)
         store.db
           .prepare("INSERT INTO leadership_tasks(id,json) VALUES(?,?)")

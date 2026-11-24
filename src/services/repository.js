@@ -311,7 +311,7 @@ export async function leadershipRequest(path = "", method = "GET", payload) {
       result.error || "Sitzung konnte nicht geladen oder gespeichert werden.",
     );
   }
-  return path.endsWith("/pdf") ? response.blob() : response.json();
+  return /(?:\/pdf|\/template)$/.test(path) ? response.blob() : response.json();
 }
 let legacyDb;
 async function legacyFile(id) {

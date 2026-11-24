@@ -95,7 +95,6 @@ function createPackage({
   tree("src");
   tree("docs");
   for (const file of [
-    "resources/Benutzerhandbuch_Waermeverbund_Cockpit.pdf",
     "tools/backup.cjs",
     "tools/setup-backup-admin.cjs",
     "tools/restore.cjs",

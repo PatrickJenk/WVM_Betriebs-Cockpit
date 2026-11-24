@@ -179,7 +179,7 @@ function visible(state, u) {
         plants: [],
         accountVersion: 2,
         stationVersion: 1,
-        documentTemplateVersion: 1,
+        documentTemplateVersion: 2,
       },
     };
   const data = structuredClone(state.data);
@@ -196,13 +196,16 @@ function visible(state, u) {
         plants: [],
         accountVersion: 2,
         stationVersion: 1,
-        documentTemplateVersion: 1,
+        documentTemplateVersion: 2,
       },
     };
   data.entries.forEach((e) => {
     e.participants = participants(e, state.data.users);
   });
   data.users = data.users.map(cleanUser);
+  data.jourfixAccess = ["epc", "wvm"].filter((kind) =>
+    require("./server-jourfix.cjs").allowed(u, kind),
+  );
   if (!admin(u)) data.entries.forEach((e) => delete e.history);
   return {
     revision: state.revision,
@@ -610,32 +613,10 @@ module.exports = async function api(req, res) {
     if (await collaboration.api(req, res, { body, json })) return true;
     if (await require("./server-leadership.cjs")(req, res, { body, json }))
       return true;
-    if (url === "/api/handbook" && ["GET", "HEAD"].includes(req.method)) {
-      requireUser(user);
-      const file = path.join(
-        __dirname,
-        "resources",
-        "Benutzerhandbuch_Waermeverbund_Cockpit.pdf",
-      );
-      const bytes = fs.readFileSync(file);
-      const download =
-        new URL(req.url, "http://localhost").searchParams.get("download") ===
-        "1";
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader(
-        "Content-Disposition",
-        `${download ? "attachment" : "inline"}; filename="Benutzerhandbuch_Waermeverbund_Cockpit.pdf"`,
-      );
-      res.setHeader("Cache-Control", "private, no-store");
-      res.setHeader("Content-Length", bytes.length);
-      res.writeHead(200);
-      res.end(req.method === "HEAD" ? undefined : bytes);
-      return true;
-    }
     if (
       state &&
       (state.data.stationVersion !== 1 ||
-        state.data.documentTemplateVersion !== 1)
+        state.data.documentTemplateVersion !== 2)
     ) {
       const { initializeStations, initializeDocumentFolders } =
         await import("./src/data/seed.js");
@@ -643,10 +624,10 @@ module.exports = async function api(req, res) {
         const latest = read();
         if (
           latest.data.stationVersion !== 1 ||
-          latest.data.documentTemplateVersion !== 1
+          latest.data.documentTemplateVersion !== 2
         ) {
-          initializeStations(latest.data);
-          if (latest.data.documentTemplateVersion !== 1)
+          if (latest.data.stationVersion !== 1) initializeStations(latest.data);
+          if (latest.data.documentTemplateVersion !== 2)
             initializeDocumentFolders(latest.data);
           latest.revision++;
           persist(latest);
@@ -673,7 +654,7 @@ module.exports = async function api(req, res) {
         data.folders ??= [];
         initializeAccounts(data);
         initializeStations(data);
-        if (data.documentTemplateVersion !== 1) initializeDocumentFolders(data);
+        if (data.documentTemplateVersion !== 2) initializeDocumentFolders(data);
         validate(data);
         data.users = data.users.map((u) => ({
           ...cleanUser(u),
@@ -947,6 +928,7 @@ module.exports = async function api(req, res) {
           );
         const before = latest.data,
           next = input.data;
+        delete next.jourfixAccess;
         const previousAccounts = new Map(before.users.map((u) => [u.id, u]));
         for (const candidate of next.users) {
           const previous = previousAccounts.get(candidate.id);

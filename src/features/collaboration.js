@@ -37,6 +37,14 @@ export function createCollaboration({
     }
     root.innerHTML = `<div class="page-heading"><h1>Betriebspersonal</h1>${canLead(user) ? '<button class="primary" id="contact-add">+ Neuer Kontakt</button>' : ""}</div><label>Kontakte durchsuchen<input id="contact-search" type="search" placeholder="Name, Funktion, E-Mail oder Erreichbarkeit"></label><div id="contact-groups"></div>`;
     document.querySelector("#contact-search").value = previousQuery;
+    const ordered = (org) =>
+      list
+        .filter((c) => c.organization === org)
+        .sort(
+          (a, b) =>
+            (a.order ?? Infinity) - (b.order ?? Infinity) ||
+            a.name.localeCompare(b.name, "de"),
+        );
     const draw = () => {
       const query = document
         .querySelector("#contact-search")
@@ -47,8 +55,8 @@ export function createCollaboration({
       ]
         .map(
           ([org, title]) =>
-            `<section class="contact-section"><h2>${title}</h2><div class="table-wrap"><table class="contact-table"><thead><tr><th>Person</th><th>Funktion / Zuständigkeit</th><th>E-Mail</th><th>Telefon</th><th>Erreichbarkeit</th>${canLead(user) ? "<th>Verwalten</th>" : ""}</tr></thead><tbody>${
-              list
+            `<section class="contact-section"><h2>${title}</h2><div class="table-wrap"><table class="contact-table"><thead><tr><th>Person</th><th>Funktion / Zuständigkeit</th><th>E-Mail</th><th>Telefon</th><th>Erreichbarkeit</th>${admin() || canLead(user) ? "<th>Verwalten</th>" : ""}</tr></thead><tbody>${
+              ordered(org)
                 .filter(
                   (c) =>
                     c.organization === org &&
@@ -57,16 +65,34 @@ export function createCollaboration({
                       .toLocaleLowerCase("de-CH")
                       .includes(query),
                 )
-                .sort((a, b) => a.name.localeCompare(b.name, "de"))
                 .map(
                   (c) =>
-                    `<tr><td><div class="contact-person">${c.imageId ? `<img class="contact-photo" alt="Profilbild ${esc(c.name)}" src="/api/contacts/images/${encodeURIComponent(c.imageId)}">` : `<span class="contact-photo avatar">${esc(c.name.slice(0, 2))}</span>`}<strong>${esc(c.name)}</strong></div></td><td>${esc(c.function)}</td><td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td><td><a href="tel:${esc(c.phone.replace(/[^+\d]/g, ""))}">${esc(c.phone)}</a></td><td>${esc(c.availability)}</td>${canLead(user) ? `<td><button class="secondary" data-contact-edit="${esc(c.id)}">Bearbeiten</button> <button class="danger-button" data-contact-delete="${esc(c.id)}">Löschen</button></td>` : ""}</tr>`,
+                    `<tr><td><div class="contact-person">${c.imageId ? `<img class="contact-photo" alt="Profilbild ${esc(c.name)}" src="/api/contacts/images/${encodeURIComponent(c.imageId)}">` : `<span class="contact-photo avatar">${esc(c.name.slice(0, 2))}</span>`}<strong>${esc(c.name)}</strong></div></td><td>${esc(c.function)}</td><td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td><td><a href="tel:${esc(c.phone.replace(/[^+\d]/g, ""))}">${esc(c.phone)}</a></td><td>${esc(c.availability)}</td>${admin() || canLead(user) ? `<td>${admin() ? `<button type="button" data-contact-move="-1" data-contact-id="${esc(c.id)}" aria-label="Kontakt nach oben" ${query ? "disabled" : ""}>↑</button> <button type="button" data-contact-move="1" data-contact-id="${esc(c.id)}" aria-label="Kontakt nach unten" ${query ? "disabled" : ""}>↓</button> ` : ""}${canLead(user) ? `<button class="secondary" data-contact-edit="${esc(c.id)}">Bearbeiten</button> <button class="danger-button" data-contact-delete="${esc(c.id)}">Löschen</button>` : ""}</td>` : ""}</tr>`,
                 )
                 .join("") ||
               `<tr><td colspan="6">Keine Kontakte gefunden.</td></tr>`
             }</tbody></table></div></section>`,
         )
         .join("");
+      document.querySelectorAll("[data-contact-move]").forEach((button) => {
+        const contact = list.find((c) => c.id === button.dataset.contactId);
+        const ids = ordered(contact.organization).map((c) => c.id);
+        const from = ids.indexOf(contact.id);
+        const to = from + Number(button.dataset.contactMove);
+        button.disabled ||= to < 0 || to >= ids.length;
+        button.onclick = () => {
+          [ids[from], ids[to]] = [ids[to], ids[from]];
+          try {
+            call("PUT", "contacts/order", {
+              organization: contact.organization,
+              ids,
+            });
+            contacts();
+          } catch (e) {
+            toast(e.message);
+          }
+        };
+      });
       document
         .querySelectorAll("[data-contact-edit]")
         .forEach(

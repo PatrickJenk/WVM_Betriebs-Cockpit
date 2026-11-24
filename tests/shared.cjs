@@ -47,27 +47,10 @@ async function call(port, url, method = "GET", payload, token) {
   });
   assert.equal(login.status, 200);
   const admin = login.value.token;
-  assert.equal((await fetch("http://127.0.0.1:4176/api/handbook")).status, 401);
   const handbook = await fetch("http://127.0.0.1:4176/api/handbook", {
     headers: { Authorization: "Bearer " + admin },
   });
-  assert.equal(handbook.status, 200);
-  assert.equal(handbook.headers.get("content-type"), "application/pdf");
-  assert.match(handbook.headers.get("content-disposition"), /^inline/);
-  assert.equal(
-    Buffer.from(await handbook.arrayBuffer())
-      .subarray(0, 5)
-      .toString(),
-    "%PDF-",
-  );
-  const handbookDownload = await fetch(
-    "http://127.0.0.1:4177/api/handbook?download=1",
-    { headers: { Authorization: "Bearer " + admin } },
-  );
-  assert.match(
-    handbookDownload.headers.get("content-disposition"),
-    /^attachment/,
-  );
+  assert.equal(handbook.status, 404);
 
   let snapshot = (await call(4177, "/api/state", "GET", undefined, admin))
     .value; // Token und Daten zwischen Serverprozessen nutzbar.

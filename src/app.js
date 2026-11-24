@@ -1,5 +1,6 @@
+import { createJourfix } from "./features/jourfix.js";
 import { createManagement } from "./admin/management.js";
-import { createLeadership, canLead } from "./features/leadership.js";
+import { canLead } from "./auth/roles.js";
 import { createStructure } from "./admin/structure.js";
 import {
   controlSheetTab,
@@ -187,7 +188,10 @@ function shell() {
   const hash = location.hash;
   const documentation = hash === "#documentation";
   const personnel = hash === "#personnel" || hash === "#contacts";
-  const inLeadership = leadership.active() && canLead(user);
+  const inLeadership = jourfix.active();
+  const access =
+    data.jourfixAccess ||
+    (isAdministrator(user) ? ["epc", "wvm"] : canLead(user) ? ["epc"] : []);
   const verbund = selectedNetwork();
   const networkOverview = hash === "#networks" || !!verbund;
   const dashboardActive =
@@ -227,7 +231,7 @@ function shell() {
       )
       .join(
         "",
-      )}${canLead(user) ? '<div class="nav-label">BETRIEBSFÜHRUNG</div>' + navLink("#leadership", "Austausch EPC + WVM", inLeadership) : ""}<div class="sidebar-bottom"><div class="local-info">Gemeinsame Betriebsplattform<small>Gemeinsame Serverdaten</small></div><div class="profile"><span class="avatar">${esc(user.initials)}</span><div>${esc(user.name)}<small>${esc(profileRole)}</small></div></div><div class="account-controls">${isAdministrator(user) ? '<button id="manage-cockpit">Cockpit verwalten</button>' : ""}${user.backupAdmin ? "" : '<button id="own-password-button">Passwort ändern</button>'}<button id="logout">Abmelden</button></div></div></aside><main><header class="topbar"><button class="icon-button mobile-toggle" title="Navigation öffnen" aria-label="Navigation öffnen">${icon("menu")}</button><span>${inLeadership ? "Betriebsführung" : "Betrieb"}${dashboardActive ? "" : ` <b>/</b> ${esc(pageTitle)}`}</span><div class="top-right"><span class="date">${fmt(new Date())}</span><span class="avatar small">${esc(user.initials)}</span></div></header><div class="content" id="content"></div></main>`;
+      )}${access.length ? '<div class="nav-label">BETRIEBSFÜHRUNG</div>' + (access.includes("epc") ? navLink("#jourfix/epc", "Austausch EPC + WVM", location.hash.startsWith("#jourfix/epc")) : "") + (access.includes("wvm") ? navLink("#jourfix/wvm", "JF WVM", location.hash.startsWith("#jourfix/wvm")) : "") : ""}<div class="sidebar-bottom"><div class="local-info">Gemeinsame Betriebsplattform<small>Gemeinsame Serverdaten</small></div><div class="profile"><span class="avatar">${esc(user.initials)}</span><div>${esc(user.name)}<small>${esc(profileRole)}</small></div></div><div class="account-controls">${isAdministrator(user) ? '<button id="manage-cockpit">Cockpit verwalten</button>' : ""}${user.backupAdmin ? "" : '<button id="own-password-button">Passwort ändern</button>'}<button id="logout">Abmelden</button></div></div></aside><main><header class="topbar"><button class="icon-button mobile-toggle" title="Navigation öffnen" aria-label="Navigation öffnen">${icon("menu")}</button><span>${inLeadership ? "Betriebsführung" : "Betrieb"}${dashboardActive ? "" : ` <b>/</b> ${esc(pageTitle)}`}</span><div class="top-right"><span class="date">${fmt(new Date())}</span><span class="avatar small">${esc(user.initials)}</span></div></header><div class="content" id="content"></div></main>`;
   $(".mobile-toggle").onclick = () => $(".sidebar").classList.toggle("shown");
   $(".brand").onclick = resetDashboard;
   $(".nav-dashboard").onclick = resetDashboard;
@@ -275,7 +279,6 @@ function renderNetworks(verbund) {
     previousSearch?.dataset?.network === verbund.id ? previousSearch.value : "";
   const keepFocus = previousSearch && document.activeElement === previousSearch;
   const members = sites.filter((s) => s.heatNetworkId === verbund.id);
-  const searchable = members.length > 6;
   const cards = (rows) =>
     rows
       .map((s) => {
@@ -300,7 +303,7 @@ function renderNetworks(verbund) {
     `<section class="station-section"><h2>${label}</h2><div class="documentation-grid">${cards(rows)}</div>
       <p class="muted" data-station-empty ${rows.length ? "hidden" : ""}>${rows.length ? "Keine passenden Standorte." : "Keine Standorte vorhanden."}</p></section>`;
   root.innerHTML = `<a href="#networks">← Alle Wärmeverbünde</a><div class="page-heading"><h1>Wärmeverbund ${esc(verbund.name)}</h1></div>
-    ${searchable ? `<label class="station-search">Standort suchen<input id="station-search" data-network="${esc(verbund.id)}" type="search" value="${esc(searchText)}" placeholder="Name, Adresse oder Unterkategorie"></label>` : ""}
+    <label class="station-search">Standort suchen<input id="station-search" data-network="${esc(verbund.id)}" type="search" value="${esc(searchText)}" placeholder="Name, Adresse oder Unterkategorie"></label>
     ${stationSection(
       "Heizzentralen",
       members.filter((s) => !s.type),
@@ -309,7 +312,7 @@ function renderNetworks(verbund) {
       "Unterstationen",
       members.filter((s) => s.type),
     )}`;
-  if (searchable) {
+  {
     const search = $("#station-search");
     const sections = document.querySelectorAll("#content .station-section");
     const filter = () => {
@@ -439,8 +442,8 @@ function render() {
     collaboration.contacts();
     return;
   }
-  if (leadership.active() && canLead(user)) {
-    leadership.render();
+  if (jourfix.active()) {
+    jourfix.render();
     return;
   }
   const s = current ? site(current) : null;
@@ -619,10 +622,7 @@ const { logView, bindFilters, entryForm, entryDetail } = createLogbook({
 });
 const dashboard = createDashboard(context);
 const controlRounds = createControlRounds({ ...context, repository });
-const leadership = createLeadership({
-  ...context,
-  openEntry: (id) => entryDetail(id),
-});
+const jourfix = createJourfix(context);
 const accounts = createAccounts({
   data,
   user,
@@ -684,10 +684,10 @@ let lastRoute = location.hash;
 let routing = false;
 async function route() {
   if (routing) return;
-  if (leadership.isDirty()) {
+  if (jourfix.isDirty()) {
     routing = true;
     try {
-      await leadership.saveBeforeLeave();
+      await jourfix.saveBeforeLeave();
     } catch (error) {
       history.replaceState(null, "", lastRoute);
       toast(error.message);
@@ -696,8 +696,8 @@ async function route() {
       routing = false;
     }
   }
-  if (leadership.active() && !canLead(user))
-    history.replaceState(null, "", "#dashboard");
+  if (/^#leadership(?:\/|$)/.test(location.hash))
+    history.replaceState(null, "", "#jourfix/epc");
   lastRoute = location.hash;
   syncStructure();
   const match = sites.find(
@@ -719,7 +719,7 @@ async function route() {
 }
 window.addEventListener("hashchange", route);
 window.addEventListener("beforeunload", (event) => {
-  if (leadership.isDirty()) {
+  if (jourfix.isDirty()) {
     event.preventDefault();
     event.returnValue = "";
   }
@@ -737,7 +737,7 @@ window.addEventListener("storage", (event) => {
 });
 modal.addEventListener("cancel", (event) => event.preventDefault());
 setInterval(() => {
-  if (user.id && !leadership.active()) render();
+  if (user.id && !jourfix.active()) render();
 }, 60000);
 if (accounts.restore()) {
   route();
@@ -755,7 +755,7 @@ setInterval(async () => {
     if (updated && !modal.open) {
       Object.assign(data, updated);
       if (!accounts.restore()) accounts.logout();
-      else if (!canLead(user) || !leadership.active()) shell();
+      else if (!jourfix.active()) shell();
     }
   } catch (error) {
     if (error.status === 401) accounts.logout();

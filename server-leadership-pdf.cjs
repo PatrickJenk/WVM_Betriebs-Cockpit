@@ -1,7 +1,7 @@
 const PDFDocument = require("pdfkit");
 const date = (value) =>
   value ? value.slice(0, 10).split("-").reverse().join(".") : "-";
-// Generated in memory for download, never persisted as a file or database blob.
+// Legacy and Jourfix protocols share the same PDF layout.
 async function generate(meeting) {
   const doc = new PDFDocument({
     size: "A4",
@@ -54,46 +54,85 @@ async function generate(meeting) {
     .fillColor("#154b50")
     .text(meeting.title, { width });
   doc.moveDown(0.5);
-  paragraph(
-    `Sitzung vom ${date(meeting.date)}\nTeilnehmende: ${meeting.participants}\nAbgeschlossen von ${meeting.closedBy} am ${date(meeting.closedAt)}`,
-  );
-  if (meeting.previousDate)
-    paragraph(`Rückblick seit der Sitzung vom ${date(meeting.previousDate)}.`);
-  heading("Traktanden und Besprechung");
-  paragraph(meeting.agenda);
-  heading(`Pendenzen und Veränderungen (${meeting.items.length})`);
-  if (!meeting.items.length)
+  if (meeting.jourfix) {
     paragraph(
-      "Keine offenen oder seit der letzten Sitzung geänderten Pendenzen.",
+      `Sitzung vom ${date(meeting.date)}, ${meeting.time}${meeting.chair ? "\nSitzungsleitung: " + meeting.chair : ""}`,
     );
-  meeting.items.forEach((item, index) => {
-    room(100);
-    doc
-      .moveDown(0.4)
-      .font("Helvetica-Bold")
-      .fontSize(11)
-      .fillColor("#154b50")
-      .text(`${index + 1}. ${item.title}`, { width });
+    heading("Teilnehmende");
     paragraph(
-      `${item.kind === "task" ? "Führungsaufgabe" : "Logbuch"} | ${item.change} | ${item.status}${item.kind === "task" && item.priority ? " | Priorität: " + item.priority : ""}\n${item.kind === "task" ? `Verantwortlich: ${item.responsibleName}` : `Standort: ${item.site}${item.plant ? " / " + item.plant : ""}`}\nFrist: ${date(item.dueDate)}`,
+      meeting.people
+        .map(
+          (p) => p.name + (meeting.jourfix === "epc" ? " – " + p.status : ""),
+        )
+        .join("\n"),
     );
-    paragraph(item.description);
-    if (item.nextSteps) paragraph("Nächste Schritte: " + item.nextSteps);
-    if (item.note) {
-      room();
-      paragraph("Besprechung: " + item.note);
+    if (meeting.jourfix === "epc") {
+      heading("Traktanden");
+      paragraph(meeting.agenda);
     }
-    if (item.decision) {
-      room();
-      paragraph("Beschluss: " + item.decision);
+    heading("Pendenzen");
+    meeting.items.forEach((p, i) => {
+      room(70);
+      paragraph(
+        `${i + 1}. ${p.title}\n${p.networkNames.length ? p.networkNames.join(", ") + " | " : ""}${p.status} | Verantwortlich: ${p.responsible || "-"} | Termin: ${date(p.due)}`,
+      );
+    });
+    if (meeting.jourfix === "epc") {
+      heading("Beschlüsse und Entscheidungen");
+      paragraph(meeting.decisions);
     }
-    paragraph("Besprochen: " + (item.reviewed ? "Ja" : "Nein"));
-  });
-  heading("Zusammenfassung und Beschlüsse");
-  paragraph(meeting.summary);
-  if (meeting.nextDate) {
-    heading("Nächste Sitzung");
-    paragraph(date(meeting.nextDate));
+    if (meeting.topics) {
+      heading("Neue Themen und Rückmeldungen");
+      paragraph(meeting.topics);
+    }
+    heading("Zusammenfassung");
+    paragraph(meeting.summary);
+    if (meeting.nextDate)
+      paragraph("Nächster Jourfix: " + date(meeting.nextDate));
+  } else {
+    paragraph(
+      `Sitzung vom ${date(meeting.date)}\nTeilnehmende: ${meeting.participants}\nAbgeschlossen von ${meeting.closedBy} am ${date(meeting.closedAt)}`,
+    );
+    if (meeting.previousDate)
+      paragraph(
+        `Rückblick seit der Sitzung vom ${date(meeting.previousDate)}.`,
+      );
+    heading("Traktanden und Besprechung");
+    paragraph(meeting.agenda);
+    heading(`Pendenzen und Veränderungen (${meeting.items.length})`);
+    if (!meeting.items.length)
+      paragraph(
+        "Keine offenen oder seit der letzten Sitzung geänderten Pendenzen.",
+      );
+    meeting.items.forEach((item, index) => {
+      room(100);
+      doc
+        .moveDown(0.4)
+        .font("Helvetica-Bold")
+        .fontSize(11)
+        .fillColor("#154b50")
+        .text(`${index + 1}. ${item.title}`, { width });
+      paragraph(
+        `${item.kind === "task" ? "Führungsaufgabe" : "Logbuch"} | ${item.change} | ${item.status}${item.kind === "task" && item.priority ? " | Priorität: " + item.priority : ""}\n${item.kind === "task" ? `Verantwortlich: ${item.responsibleName}` : `Standort: ${item.site}${item.plant ? " / " + item.plant : ""}`}\nFrist: ${date(item.dueDate)}`,
+      );
+      paragraph(item.description);
+      if (item.nextSteps) paragraph("Nächste Schritte: " + item.nextSteps);
+      if (item.note) {
+        room();
+        paragraph("Besprechung: " + item.note);
+      }
+      if (item.decision) {
+        room();
+        paragraph("Beschluss: " + item.decision);
+      }
+      paragraph("Besprochen: " + (item.reviewed ? "Ja" : "Nein"));
+    });
+    heading("Zusammenfassung und Beschlüsse");
+    paragraph(meeting.summary);
+    if (meeting.nextDate) {
+      heading("Nächste Sitzung");
+      paragraph(date(meeting.nextDate));
+    }
   }
   const range = doc.bufferedPageRange();
   for (let page = range.start; page < range.start + range.count; page++) {

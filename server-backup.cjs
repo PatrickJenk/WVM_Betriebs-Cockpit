@@ -40,8 +40,12 @@ function backup(label = "manual") {
       "leadership.json",
       JSON.stringify({
         meetings: store.db
-          .prepare("SELECT id,json FROM leadership_meetings")
-          .all(),
+          .prepare("SELECT id,json,pdf FROM leadership_meetings")
+          .all()
+          .map((row) => ({
+            ...row,
+            pdf: row.pdf ? Buffer.from(row.pdf).toString("base64") : null,
+          })),
         tasks: store.db.prepare("SELECT * FROM leadership_tasks").all(),
         audit: store.db.prepare("SELECT * FROM leadership_audit").all(),
       }),

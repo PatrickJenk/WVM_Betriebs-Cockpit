@@ -7,14 +7,18 @@ const rows = (table) =>
     .prepare(`SELECT json FROM ${table}`)
     .all()
     .map((r) => JSON.parse(r.json));
-const meetings = () => rows("leadership_meetings");
+const meetings = () =>
+  rows("leadership_meetings").filter((m) => m.status && !m.jourfix);
 const tasks = () => rows("leadership_tasks");
 const getMeeting = (id) => {
   const row = store.db
     .prepare("SELECT json FROM leadership_meetings WHERE id=?")
     .get(id);
   if (!row) throw store.error("Sitzung nicht gefunden.", 404);
-  return JSON.parse(row.json);
+  const meeting = JSON.parse(row.json);
+  if (!meeting.status || meeting.jourfix)
+    throw store.error("Sitzung nicht gefunden.", 404);
+  return meeting;
 };
 function audit(user, action, id) {
   store.db
@@ -138,7 +142,8 @@ function previousMeeting() {
 function currentUser(req) {
   const u = store.session(req, store.read());
   store.requireUser(u);
-  if (!allowed(u)) throw store.error("Nicht gefunden.", 404);
+  if (!allowed(u) || !require("./server-jourfix.cjs").allowed(u, "epc"))
+    throw store.error("Nicht gefunden.", 404);
   if (
     req.headers["x-cockpit-account"] &&
     req.headers["x-cockpit-account"] !== u.id
@@ -169,6 +174,8 @@ function overview() {
 module.exports = async function leadership(req, res, { body, json }) {
   const url = req.url.split("?")[0];
   if (!url.startsWith("/api/leadership")) return false;
+  if (/^\/api\/leadership\/jourfix(?:\/|$)/.test(url))
+    return require("./server-jourfix.cjs")(req, res, { body, json });
   const user = currentUser(req);
   const route = url.slice("/api/leadership".length);
   if (route === "" && req.method === "GET") {

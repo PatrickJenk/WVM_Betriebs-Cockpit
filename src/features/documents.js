@@ -48,10 +48,6 @@ export function createDocuments(context) {
       `<span class="documentation-card-type">${icon("file")} ${esc(type)}</span><strong>${esc(name)}</strong>`;
     return `<div class="page-heading"><h1>Dokumentationen</h1>${isAdministrator(user) ? '<button class="primary" id="general-upload">+ Dokumente hinzufügen</button>' : ""}</div>
       <div class="documentation-grid">
-        <article class="documentation-card">
-          <a class="documentation-card-open" href="/api/handbook" target="_blank" rel="noopener noreferrer">${details("Benutzerhandbuch", "PDF")}</a>
-          <div class="documentation-card-actions"><a class="secondary" href="/api/handbook?download=1">Herunterladen</a></div>
-        </article>
         ${docs
           .map((doc) => {
             const id = esc(doc.id);

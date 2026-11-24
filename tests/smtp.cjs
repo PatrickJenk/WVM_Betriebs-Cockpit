@@ -93,17 +93,31 @@ if (process.argv[2] === "--client") {
         data: snapshot.data,
       });
       assert.equal(saved.status, 200, JSON.stringify(saved));
+      const route = "leadership/jourfix/wvm";
+      const draft = await call(route, "POST");
+      assert.equal(draft.status, 200);
+      const closed = await call(
+        route + "/" + draft.value.id + "/close",
+        "POST",
+        {
+          ...draft.value,
+          time: "08:30",
+          people: [{ id: "admin", status: "Anwesend", mail: true }],
+        },
+      );
+      assert.equal(closed.status, 200, JSON.stringify(closed.value));
+      assert.equal(closed.value.queued, 1);
       await service.worker();
       assert.equal(
         store.db
           .prepare("SELECT count(*) AS n FROM mail_outbox WHERE status='sent'")
           .get().n,
-        1,
+        2,
       );
       await service.worker();
       assert.equal(
         store.db.prepare("SELECT count(*) AS n FROM mail_outbox").get().n,
-        1,
+        2,
       );
     } finally {
       await new Promise((r) => server.close(r));
@@ -269,14 +283,22 @@ if (process.argv[2] === "--client") {
       await client(starttls, "starttls");
       assert.equal(
         messages.length,
-        4,
-        "two test mails and two automatic assignments",
+        6,
+        "two test mails, two automatic assignments and two PDF protocols",
       );
       assert.ok(messages.some((m) => m.includes("/#entry/smtp-entry")));
+      assert.equal(
+        messages.filter(
+          (m) =>
+            m.includes("Content-Type: application/pdf") &&
+            m.includes("Content-Disposition: attachment"),
+        ).length,
+        2,
+      );
       await client(implicit, "tls", false, false, true);
       await client(implicit, "tls", true, true, true);
       await client(noTls, "starttls", true, false, true);
-      assert.equal(messages.length, 4, "failed TLS/auth never sends DATA");
+      assert.equal(messages.length, 6, "failed TLS/auth never sends DATA");
       assert.equal(authOverPlain, false, "no plaintext credentials");
       console.log(
         "Passed: actual SMTP through API/worker, TLS and STARTTLS, trusted/untrusted certificates, authentication errors, enforced encryption and duplicate prevention.",

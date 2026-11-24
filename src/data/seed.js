@@ -172,39 +172,46 @@ export const categories = [
   "Fotos",
   "Sonstiges",
 ];
+export const documentTemplateVersion = 2;
 export function initializeDocumentFolders(data) {
   data.folders ??= [];
-  for (const station of sites.filter((s) => !s.type)) {
-    const add = (key, name, parentId = null) => {
-      const existing = data.folders.find(
-        (f) =>
-          f.siteId === station.id &&
-          (f.parentId || null) === parentId &&
-          f.name === name,
-      );
-      if (existing) return existing.id;
-      const id = "template-" + station.id + "-" + key;
-      data.folders.push({ id, siteId: station.id, name, parentId });
-      return id;
+  for (const site of (data.structure?.sites || sites).filter(
+    (s) => !s.type && !s.deleted,
+  )) {
+    const local = data.folders.filter((f) => f.siteId === site.id);
+    const kept = new Set();
+    const preserve = (id) => {
+      while (id && !kept.has(id)) {
+        const folder = local.find((f) => f.id === id);
+        if (!folder) break;
+        kept.add(id);
+        id = folder.parentId;
+      }
     };
-    add("leitsystem", "01 Leitsystem - Elektroschemas");
-    add("prinzip", "02 Zentrale - Prinzipschemas");
-    const components = add("anlagen", "03 Anlagen und Komponenten");
-    for (const component of data.plants.filter(
-      (p) =>
-        p.siteId === station.id &&
-        p.active &&
-        !p.deleted &&
-        p.name !== "Sonstiges",
-    )) {
-      const id = add("anlage-" + component.id, component.name, components);
-      add("schemas-" + component.id, "Schemas", id);
-      add("anleitungen-" + component.id, "Bedienungsanleitungen", id);
-    }
-    add("kunden", "04 Kundenschemas - Referenz");
-    add("infos", "05 Informationen und Sonstiges");
+    const configured = (data.controlTemplates || []).filter(
+      (t) => t.siteId === site.id,
+    );
+    for (const template of configured) preserve(template.folderId);
+    for (const doc of data.documents || [])
+      if (doc.siteId === site.id) preserve(doc.folderId);
+    const control = local.find(
+      (f) =>
+        !f.sectionId &&
+        (f.controlArchive || (!f.parentId && f.name === "Kontrollrundgänge")),
+    );
+    if (control) preserve(control.id);
+    data.folders = data.folders.filter(
+      (f) => f.siteId !== site.id || kept.has(f.id),
+    );
+    if (!control && !configured.some((t) => kept.has(t.folderId)))
+      data.folders.push({
+        id: "control-rounds-" + site.id.slice(0, 85),
+        siteId: site.id,
+        name: "Kontrollrundgänge",
+        parentId: null,
+      });
   }
-  data.documentTemplateVersion = 1;
+  data.documentTemplateVersion = documentTemplateVersion;
 }
 export function demoLogbook(users = []) {
   const known = (id, name, initials, company) => {

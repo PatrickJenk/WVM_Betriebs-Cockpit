@@ -11,6 +11,7 @@ const fs = require("node:fs"),
     stationIcon,
     stationLabel,
     initializeStations,
+    initializeDocumentFolders,
   } = await import("../src/data/seed.js");
   const { createAdministration } =
     await import("../src/admin/administration.js");
@@ -26,6 +27,7 @@ const fs = require("node:fs"),
     await import("../src/features/control-rounds.js");
   const { createCollaboration } =
     await import("../src/features/collaboration.js");
+  const { createJourfix } = await import("../src/features/jourfix.js");
   const { createLeadership, canLead } =
     await import("../src/features/leadership.js");
   const { uuid } = await import("../src/services/ids.js");
@@ -102,6 +104,7 @@ const fs = require("node:fs"),
       createControlRounds,
       createCollaboration,
       createLeadership,
+      createJourfix,
       canLead,
       putFile: async () => {},
       getFile: async () => {},
@@ -155,16 +158,13 @@ const fs = require("node:fs"),
   assert.match(node("#content").innerHTML, /marzili-logo/);
   assert.match(node("#app").innerHTML, /href="#documentation"/);
   assert.match(node("#app").innerHTML, /href="#personnel"/);
-  assert.match(node("#app").innerHTML, /href="#leadership"/);
-  vm.runInContext("user.leadership=false;shell()", context);
-  assert.doesNotMatch(node("#app").innerHTML, /href="#leadership"/);
-  vm.runInContext("delete user.leadership", context);
+  assert.match(node("#app").innerHTML, /href="#jourfix\/epc"/);
+  vm.runInContext("user.role='EPC';user.leadership=false;shell()", context);
+  assert.doesNotMatch(node("#app").innerHTML, /href="#jourfix\/epc"/);
+  vm.runInContext("user.role='Admin';delete user.leadership", context);
   context.location.hash = "#documentation";
   vm.runInContext("shell()", context);
-  assert.match(
-    node("#content").innerHTML,
-    /href="\/api\/handbook" target="_blank"/,
-  );
+  assert.doesNotMatch(node("#content").innerHTML, /api\/handbook/);
   assert.match(node("#content").innerHTML, /id="general-upload"/);
   vm.runInContext("user.role='EPC';shell()", context);
   assert.doesNotMatch(node("#content").innerHTML, /id="general-upload"/);
@@ -425,10 +425,7 @@ const fs = require("node:fs"),
       assert.match(html, /<strong>H36<\/strong><small>Holzikofenweg 36/);
       assert.doesNotMatch(html, /\d offen/);
     }
-    assert.equal(
-      html.includes('id="station-search"'),
-      sites.filter((s) => s.heatNetworkId === network.id).length > 6,
-    );
+    assert.equal(html.includes('id="station-search"'), true);
     assert.ok(
       html.indexOf("<h2>Heizzentralen") < html.indexOf("<h2>Unterstationen"),
     );
@@ -479,17 +476,35 @@ const fs = require("node:fs"),
   assert.equal(cancelPrevented, true);
   const templates = seed().folders;
   for (const heating of sites.filter((s) => !s.type)) {
-    assert.equal(
-      templates.filter((f) => f.siteId === heating.id && !f.parentId).length,
-      5,
-    );
+    assert.equal(templates.filter((f) => f.siteId === heating.id).length, 1);
     assert.ok(
       templates.some(
-        (f) => f.siteId === heating.id && f.name === "Bedienungsanleitungen",
+        (f) => f.siteId === heating.id && f.name === "Kontrollrundgänge",
       ),
     );
   }
   assert.ok(!templates.some((f) => sites.find((s) => s.id === f.siteId)?.type));
+  const original = seed();
+  original.folders.push(
+    { id: "legacy-empty", siteId: "eiger", name: "Leere Vorlage" },
+    { id: "legacy-root", siteId: "eiger", name: "Unterlagen" },
+    {
+      id: "legacy-file",
+      siteId: "eiger",
+      name: "Anleitungen",
+      parentId: "legacy-root",
+    },
+  );
+  original.documents.push({
+    id: "existing-document",
+    siteId: "eiger",
+    folderId: "legacy-file",
+  });
+  initializeDocumentFolders(original);
+  assert.ok(!original.folders.some((f) => f.id === "legacy-empty"));
+  assert.ok(original.folders.some((f) => f.id === "legacy-root"));
+  assert.ok(original.folders.some((f) => f.id === "legacy-file"));
+  assert.ok(original.documents.some((d) => d.id === "existing-document"));
   const now = new Date("2026-10-06T12:00:00Z");
   const age = (n) => new Date(now.getTime() - n * 86400000).toISOString();
   assert.equal(

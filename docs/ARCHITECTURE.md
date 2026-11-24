@@ -18,7 +18,6 @@
 | Manuelle Veröffentlichung | `deploy.sh`, `tools/deployment-check.cjs`, `tools/migrate.cjs` |
 | Betriebswerkzeuge | `tools/backup.cjs`, `tools/restore.cjs`, `tools/mail-worker.cjs` |
 | Tests | `tests/`; Node-Assertions und DOM-Tests mit LinkeDOM |
-| Benötigtes Druckhandbuch | `resources/Benutzerhandbuch_Waermeverbund_Cockpit.pdf` |
 
 ## Datenfluss
 

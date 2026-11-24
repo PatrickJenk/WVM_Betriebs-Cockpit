@@ -537,21 +537,32 @@ async function worker() {
       const event = db
         .prepare("SELECT cycle FROM mail_overdue_events WHERE entry_id=?")
         .get(e?.id || "");
+      const protocol =
+        job.kind === "Jourfix-Protokoll"
+          ? db
+              .prepare("SELECT json,pdf FROM leadership_meetings WHERE id=?")
+              .get(job.entry_id)
+          : null;
+      const protocolMeeting = protocol && JSON.parse(protocol.json);
       const stale =
-        !e ||
-        (job.kind === "Aufgabenzuweisung" &&
-          !group &&
-          !(e.assigneeIds || []).includes(u?.id)) ||
-        (job.kind === "Kopie" && !(e.ccIds || []).includes(u?.id)) ||
-        (job.kind === "Überfällige Pendenz" &&
-          (e.status === "Erledigt" ||
-            payload.dueDate !== e.dueDate ||
-            !job.event_key.startsWith(`overdue:${e.id}:${event?.cycle}:`)));
+        job.kind === "Jourfix-Protokoll"
+          ? !protocol?.pdf ||
+            !u ||
+            !require("./server-jourfix.cjs").allowed(u, protocolMeeting.jourfix)
+          : !e ||
+            (job.kind === "Aufgabenzuweisung" &&
+              !group &&
+              !(e.assigneeIds || []).includes(u?.id)) ||
+            (job.kind === "Kopie" && !(e.ccIds || []).includes(u?.id)) ||
+            (job.kind === "Überfällige Pendenz" &&
+              (e.status === "Erledigt" ||
+                payload.dueDate !== e.dueDate ||
+                !job.event_key.startsWith(`overdue:${e.id}:${event?.cycle}:`)));
       if (
         stale ||
         (group
           ? !group.to.length && !group.cc.length
-          : !u?.email || u.notificationsEnabled === false)
+          : !u?.email || (!protocol && u.notificationsEnabled === false))
       ) {
         db.prepare(
           "UPDATE mail_outbox SET status='skipped' WHERE event_key=?",
@@ -568,7 +579,19 @@ async function worker() {
             ? { to: group.to, cc: group.cc }
             : { to: email(u.email, false) }),
           messageId: `<${store.digest(job.event_key)}@${config.senderEmail.split("@")[1]}>`,
-          ...logbookMessage(payload, e.id, config.baseUrl, config.template),
+          ...(protocol
+            ? {
+                subject: protocolMeeting.title + " – " + protocolMeeting.date,
+                text: "Das abgeschlossene Protokoll liegt im Anhang.",
+                attachments: [
+                  {
+                    filename: "Jourfix-" + protocolMeeting.date + ".pdf",
+                    content: Buffer.from(protocol.pdf),
+                    contentType: "application/pdf",
+                  },
+                ],
+              }
+            : logbookMessage(payload, e.id, config.baseUrl, config.template)),
         });
         if (leaseLost || !renew()) break;
         db.prepare(
@@ -651,7 +674,12 @@ async function api(req, res, { body, json }) {
         "Anmeldung wurde in einem anderen Tab geändert. Bitte neu laden.",
         409,
       );
-    if (req.method !== "GET" && url.startsWith("/api/contacts") && !canLead(u))
+    if (
+      req.method !== "GET" &&
+      url.startsWith("/api/contacts") &&
+      !canLead(u) &&
+      !(url === "/api/contacts/order" && admin(u))
+    )
       throw store.error(
         "Nur Personen mit der Rolle Leitung dürfen Betriebspersonal verwalten.",
         403,
@@ -802,6 +830,37 @@ async function api(req, res, { body, json }) {
     } else throw store.error("Unbekannte Mailfunktion.", 404);
     return true;
   }
+  if (url === "/api/contacts/order" && req.method === "PUT") {
+    const p = await input(128 * 1024);
+    store.locked(() => {
+      if (!admin(authorize())) throw store.error("Keine Berechtigung.", 403);
+      const rows = db
+        .prepare("SELECT * FROM contacts")
+        .all()
+        .map((r) => ({ ...r, contact: JSON.parse(r.json) }))
+        .filter((r) => r.contact.organization === p.organization);
+      if (
+        !Array.isArray(p.ids) ||
+        p.ids.length !== rows.length ||
+        new Set(p.ids).size !== rows.length ||
+        !p.ids.every((id) => rows.some((r) => r.id === id))
+      )
+        throw store.error(
+          "Die Kontaktliste wurde geändert. Bitte neu laden.",
+          409,
+        );
+      const update = db.prepare(
+        "UPDATE contacts SET json=?,version=version+1 WHERE id=?",
+      );
+      p.ids.forEach((id, order) => {
+        const { contact } = rows.find((r) => r.id === id);
+        update.run(JSON.stringify({ ...contact, order }), id);
+      });
+      store.audit(u, "contact.reordered", { organization: p.organization });
+    });
+    json(res, 200, { ok: true });
+    return true;
+  }
   if (url === "/api/contacts" && req.method === "GET") {
     json(res, 200, {
       contacts: db
@@ -937,6 +996,9 @@ async function api(req, res, { body, json }) {
         )
           throw store.error("Bild nicht gefunden.");
         value.imageId = p.imageId || "";
+        const previous = old && JSON.parse(old.json);
+        if (previous?.organization === value.organization)
+          value.order = previous.order;
         db.prepare("INSERT OR REPLACE INTO contacts VALUES(?,?,?)").run(
           id,
           JSON.stringify(value),

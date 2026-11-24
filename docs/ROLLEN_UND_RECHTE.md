@@ -1,6 +1,6 @@
 # Rollen und Rechte im Betriebscockpit
 
-**User** hat die Grundrechte eines angemeldeten Kontos. **Leitung** ergänzt diese um die Personalverwaltung und «Austausch EPC + WVM». **Admin** ergänzt sie um die technische und betriebliche Verwaltung. Admin und Leitung lassen sich kombinieren. Die Spalte Admin beschreibt ein Konto ohne zusätzlich gesetzte Leitung. Bei älteren Konten ohne ausdrückliche Einstellung bleibt der bisherige Leitungszugriff für WVM und Admin erhalten. WVM und EPC bezeichnen grundsätzlich die Unternehmenszugehörigkeit. [Rollenlogik](../src/auth/roles.js)
+**User** hat die Grundrechte eines angemeldeten Kontos. **Leitung** ergänzt diese um die Personalverwaltung und den standardmässigen Zugang zu «Austausch EPC + WVM». **Admin** ergänzt sie um die technische und betriebliche Verwaltung. Admin und Leitung lassen sich kombinieren. Die Spalte Admin beschreibt ein Konto ohne zusätzlich gesetzte Leitung. Bei älteren Konten ohne ausdrückliche Einstellung bleibt der bisherige Leitungszugriff für WVM und Admin erhalten. WVM und EPC bezeichnen grundsätzlich die Unternehmenszugehörigkeit. [Rollenlogik](../src/auth/roles.js)
 
 | Bereich | User | Leitung | Admin ohne Leitung |
 | --- | --- | --- | --- |
@@ -12,8 +12,8 @@
 | Übergeordnete Dokumentationen und Handbuch | Anzeigen und herunterladen | Wie User | Zusätzlich allgemeine Dokumente hinzufügen und löschen |
 | Dokumente je Standort | Anzeigen, herunterladen und hochladen. Eigene Dokumente umbenennen, verschieben und löschen, soweit die Datei kein abgeschlossenes Kontrollblatt ist. | Wie User | Auch fremde Dokumente und Dokumentordner verwalten |
 | Kontrollblatt | Rundgänge erfassen und abgelegte PDFs unter Dokumente öffnen oder herunterladen. | Wie User | Zusätzlich Grundvorlage, Kontrollpunkte, optionale Rundgangsarten und PDF-Ablageordner verwalten. |
-| Betriebspersonal | Kontaktverzeichnis lesen | Kontakte und Profilbilder hinzufügen, bearbeiten und löschen | Kontaktverzeichnis lesen. Kontaktpflege mit zusätzlicher Leitung. |
-| Austausch EPC + WVM | Kein Zugang | Jour fixe, Führungsaufgaben, Sitzungsabschluss und Protokoll-PDFs | Zugang mit zusätzlicher Leitung |
+| Betriebspersonal | Kontaktverzeichnis lesen | Kontakte und Profilbilder hinzufügen, bearbeiten und löschen | Kontaktverzeichnis lesen und Kontakte innerhalb ihrer Organisation neu anordnen. Kontaktpflege mit zusätzlicher Leitung. |
+| Betriebsführung | Zugang nach Freigabe pro Jourfix | Austausch EPC + WVM standardmässig, separate Freigabe nach Einrichtung einer Zugriffsliste | Beide Jourfixe, Zugriff und Word-Vorlagen verwalten |
 | Navigation, Standorte, Anlagen, Register und Ordner | Vorhandene Struktur nutzen | Wie User | Struktur hinzufügen, bearbeiten, ausblenden und löschen. Anlagen aktivieren und deaktivieren. |
 | Benutzerverwaltung und Sicherheitsprotokoll | Kein Zugang | Kein Zugang | Konten und Standardrollen verwalten, Einladungen und Passwort-Resets auslösen, Sicherheitsprotokoll lesen. Für geschützte Konten gelten zusätzliche Systemrechte. |
 | E-Mail-Versand und Vorlagen | Automatische Benachrichtigungen bei aktiviertem Versand und entsprechender Kontoeinstellung erhalten | Wie User | Versand konfigurieren, testen und Vorlagen bearbeiten mit SMTP-Systemrecht oder als Haupt- bzw. Backup-Admin |

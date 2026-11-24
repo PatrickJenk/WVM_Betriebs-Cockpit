@@ -20,7 +20,9 @@ if (!process.argv.includes("--confirm-production-migrations")) {
         defaults.initializeStations(state.data);
         changed = true;
       }
-      if (state.data.documentTemplateVersion !== 1) {
+      if (
+        state.data.documentTemplateVersion !== defaults.documentTemplateVersion
+      ) {
         defaults.initializeDocumentFolders(state.data);
         changed = true;
       }
@@ -39,7 +41,7 @@ if (!process.argv.includes("--confirm-production-migrations")) {
       }
     });
     console.log(
-      "Freigegebene additive Migrationen abgeschlossen. Konten und Betriebsdaten bleiben erhalten.",
+      "Freigegebene Migrationen abgeschlossen. Konten und Betriebsdaten bleiben erhalten.",
     );
   })().catch(() => {
     console.error(
