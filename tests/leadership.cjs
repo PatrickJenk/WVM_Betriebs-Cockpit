@@ -328,28 +328,12 @@ async function operational(token, change) {
     (await call(route + "/settings", "PUT", { access: ["epc"] }, wvm)).status,
     404,
   );
-  const { zip } = require("../tools/zip.cjs");
-  const template = path.join(root, "vorlage.docx");
-  zip(template, [
-    {
-      name: "word/document.xml",
-      bytes: Buffer.from(
-        "<w:document><w:p><w:r><w:t>Welche Arbeiten sind offen?</w:t></w:r></w:p></w:document>",
-      ),
-    },
-  ]);
-  await ok(
-    route + "/settings",
-    "PUT",
-    { access: ["epc"], template: fs.readFileSync(template).toString("base64") },
-    admin,
-  );
+  await ok(route + "/settings", "PUT", { access: ["epc"] }, admin);
   assert.deepEqual(
     (await ok("/state", "GET", undefined, epc)).data.jourfixAccess,
     ["wvm"],
   );
   const draft = await ok(route, "POST", undefined, epc);
-  assert.equal(draft.topics, "Welche Arbeiten sind offen?");
   assert.equal(
     (await call("/leadership/jourfix/epc/" + draft.id, "GET", undefined, admin))
       .status,
@@ -410,6 +394,97 @@ async function operational(token, change) {
   assert.equal(
     (await call(route + "/" + draft.id + "/pdf", "GET", undefined, epc)).status,
     404,
+  );
+  const exchange = "/leadership/jourfix/epc";
+  await ok(exchange + "/settings", "PUT", { access: ["wvm", "epc"] }, admin);
+  await ok(exchange + "/agenda", "POST", { title: "Erstes Traktandum" }, epc);
+  assert.equal((await call(exchange, "POST", undefined, epc)).status, 403);
+  const prep = await ok(exchange, "POST", undefined, wvm);
+  const exchangeMeeting = exchange + "/" + prep.id;
+  assert.equal(prep.open, false);
+  assert.equal(prep.agendaItems[0].title, "Erstes Traktandum");
+  assert.equal(
+    (await call(exchangeMeeting, "GET", undefined, epc)).status,
+    403,
+  );
+  await ok(exchange + "/agenda", "POST", { title: "Zweites Traktandum" }, epc);
+  const shared = await ok(
+    exchangeMeeting,
+    "PATCH",
+    {
+      publish: true,
+      changes: {
+        time: { base: "", value: "14:00" },
+        people: {
+          base: [],
+          value: [
+            { id: "epc", status: "Offen" },
+            { id: "wvm", status: "Anwesend" },
+          ],
+        },
+      },
+    },
+    wvm,
+  );
+  assert.equal(shared.open, true);
+  assert.equal(shared.agendaItems.length, 2);
+  const key = "note:" + shared.agendaItems[0].id;
+  await ok(
+    exchangeMeeting,
+    "PATCH",
+    { changes: { [key]: { base: "", value: "Notiz aus EPC" } } },
+    epc,
+  );
+  const merged = await ok(
+    exchangeMeeting,
+    "PATCH",
+    { changes: { summary: { base: "", value: "Gemeinsam ergänzt" } } },
+    wvm,
+  );
+  assert.equal(merged.agendaItems[0].notes, "Notiz aus EPC");
+  assert.equal(merged.summary, "Gemeinsam ergänzt");
+  assert.equal(
+    (
+      await call(
+        exchangeMeeting,
+        "PATCH",
+        { changes: { [key]: { base: "", value: "Veraltete Eingabe" } } },
+        wvm,
+      )
+    ).status,
+    409,
+  );
+  const order = merged.agendaItems.map((item) => item.id);
+  const reordered = await ok(
+    exchangeMeeting,
+    "PATCH",
+    {
+      changes: { agendaOrder: { base: order, value: [...order].reverse() } },
+    },
+    wvm,
+  );
+  assert.equal(reordered.agendaItems[0].title, "Zweites Traktandum");
+  assert.equal(reordered.agendaItems[1].notes, "Notiz aus EPC");
+  const archived = await ok(exchangeMeeting + "/close", "POST", reordered, wvm);
+  assert.equal(archived.queued, 2);
+  assert.equal(archived.chair, "");
+  assert.equal((await ok(exchange, "GET", undefined, epc)).upcoming.length, 0);
+  assert.equal(
+    (await call(exchangeMeeting, "DELETE", undefined, wvm)).status,
+    404,
+  );
+  await ok(exchangeMeeting, "DELETE", undefined, admin);
+  assert.equal(
+    (await call(exchangeMeeting + "/pdf", "GET", undefined, admin)).status,
+    404,
+  );
+  assert.equal(
+    store.db
+      .prepare(
+        "SELECT count(*) AS n FROM mail_outbox WHERE entry_id=? AND status='skipped'",
+      )
+      .get(prep.id).n,
+    2,
   );
   // Private archive and exact PDF bytes survive backup/restore.
   const backup = spawnSync(

@@ -8,17 +8,26 @@ module.exports = async function testLeadershipUI({ base, token, meetingId }) {
   );
   const originalFetch = global.fetch;
   const originals = Object.fromEntries(
-    ["document", "location", "sessionStorage", "FormData"].map((key) => [
-      key,
-      global[key],
-    ]),
+    [
+      "document",
+      "location",
+      "sessionStorage",
+      "FormData",
+      "confirm",
+      "setInterval",
+    ].map((key) => [key, global[key]]),
   );
   Object.defineProperty(HTMLElement.prototype, "elements", {
     configurable: true,
     get() {
       return new Proxy(
         {},
-        { get: (_, name) => this.querySelector(`[name="${String(name)}"]`) },
+        {
+          get: (_, name) =>
+            name === "namedItem"
+              ? (key) => this.querySelector(`[name="${key}"]`)
+              : this.querySelector(`[name="${String(name)}"]`),
+        },
       );
     },
   });
@@ -172,6 +181,52 @@ module.exports = async function testLeadershipUI({ base, token, meetingId }) {
     console.log(
       "Passed: real DOM form save, escaped text, draft retention, review validation, closure dialog, task creation and snapshot refresh.",
     );
+    // Exercise the new workflow using the real request transport and archive.
+    const callbacks = [];
+    global.setInterval = (fn) => callbacks.push(fn);
+    global.confirm = () => true;
+    const { createJourfix } = await import("../src/features/jourfix.js");
+    const jourfix = createJourfix({
+      user: { id: "wvm", role: "WVM" },
+      esc,
+      toast: (s) => messages.push(s),
+    });
+    const event = { preventDefault() {} };
+    location.hash = "#jourfix/epc";
+    await jourfix.render();
+    const agenda = document.querySelector("#jourfix-agenda");
+    agenda.elements.namedItem("title").value = "DOM-Test Traktandum";
+    await agenda.onsubmit(event);
+    await document.querySelector("#jourfix-new").onclick(event);
+    await jourfix.render();
+    const preparation = document.querySelector("#jourfix-form");
+    assert.equal(document.querySelector("#jourfix-close"), null);
+    preparation.elements.namedItem("time").value = "08:15";
+    const search = document.querySelector("#jourfix-person-search");
+    search.value = "Betriebsleitung";
+    search.oninput();
+    const suggestion = document.querySelector("[data-pick=wvm]");
+    assert.ok(suggestion);
+    document
+      .querySelector("#jourfix-suggestions")
+      .onclick({ target: suggestion });
+    await preparation.onsubmit(event);
+    assert.equal(location.hash, "#jourfix/epc", messages.join(" / "));
+    await jourfix.render();
+    const protocolLink = document.querySelector('a[href^="#jourfix/epc/"]');
+    assert.ok(protocolLink);
+    location.hash = protocolLink.getAttribute("href");
+    await jourfix.render();
+    const note = document.querySelector('textarea[name^="note:"]');
+    assert.ok(note);
+    note.value = "Gemeinsame Notizen";
+    document.querySelector("#jourfix-form").dataset.dirty = "true";
+    await callbacks[0]();
+    assert.equal(jourfix.isDirty(), false, messages.join(" / "));
+    await document.querySelector("#jourfix-close").onclick(event);
+    assert.equal(location.hash, "#jourfix/epc", messages.join(" / "));
+    await jourfix.render();
+    assert.ok(document.querySelector("[data-jourfix-pdf]"));
   } finally {
     await waitFor(() => requests === 0);
     global.fetch = originalFetch;

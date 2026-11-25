@@ -26,7 +26,86 @@ const put = (id, value, pdf = null) =>
     )
     .run(id, JSON.stringify(value), pdf);
 const config = () => read(configId) || { access: {} };
-const templateId = (kind) => "jourfix-template-" + kind;
+const agendaId = "jourfix-agenda-epc";
+const canPrepare = (user) => isAdministrator(user) || canLead(user);
+const agendaFor = (meeting) =>
+  meeting.agendaItems ||
+  (meeting.agenda
+    ? [{ id: "legacy", title: "Bisherige Traktanden", notes: meeting.agenda }]
+    : []);
+const editableFields = [
+  "date",
+  "time",
+  "chair",
+  "people",
+  "decisions",
+  "topics",
+  "summary",
+  "nextDate",
+  "items",
+];
+function publicMeeting(meeting) {
+  return { ...meeting, agendaItems: agendaFor(meeting) };
+}
+function patchInput(meeting, patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch))
+    throw store.error("Ungültige Protokolländerung.");
+  const input = {
+    ...meeting,
+    agendaItems: agendaFor(meeting).map((item) => ({ ...item })),
+  };
+  for (const [key, change] of Object.entries(patch)) {
+    if (!change || !Object.hasOwn(change, "value"))
+      throw store.error("Ungültige Protokolländerung.");
+    if (key === "agendaOrder") {
+      const items = new Map(input.agendaItems.map((item) => [item.id, item]));
+      const ids = [...items.keys()];
+      if (
+        !Array.isArray(change.value) ||
+        change.value.length !== ids.length ||
+        new Set(change.value).size !== ids.length ||
+        change.value.some((id) => !items.has(id)) ||
+        (JSON.stringify(ids) !== JSON.stringify(change.base) &&
+          JSON.stringify(ids) !== JSON.stringify(change.value))
+      )
+        throw store.error(
+          "Die Traktandenliste wurde gleichzeitig geändert. Bitte zuerst neu laden.",
+          409,
+        );
+      input.agendaItems = change.value.map((id) => items.get(id));
+      continue;
+    }
+    const note =
+      key.startsWith("note:") &&
+      input.agendaItems.find((item) => item.id === key.slice(5));
+    if (!note && !editableFields.includes(key))
+      throw store.error("Ungültiges Protokollfeld.");
+    const current = note ? note.notes : input[key];
+    const comparable =
+      key === "people"
+        ? current.map(({ id, status }) => ({ id, status }))
+        : key === "items"
+          ? current.map(({ title, responsible, due, status, networks }) => ({
+              title,
+              responsible,
+              due,
+              status,
+              networks,
+            }))
+          : current;
+    if (
+      JSON.stringify(comparable) !== JSON.stringify(change.base) &&
+      JSON.stringify(comparable) !== JSON.stringify(change.value)
+    )
+      throw store.error(
+        "Ein Protokollfeld wurde gleichzeitig geändert. Deine Eingabe bleibt sichtbar. Lade die Sitzung neu, um den gespeicherten Stand zu sehen.",
+        409,
+      );
+    if (note) note.notes = change.value;
+    else input[key] = change.value;
+  }
+  return input;
+}
 function allowed(user, kind, settings = config()) {
   return (
     isAdministrator(user) ||
@@ -36,10 +115,10 @@ function allowed(user, kind, settings = config()) {
 }
 const activeUsers = (state) =>
   state.data.users.filter((u) => u.active !== false && !u.backupAdmin);
-const text = (v, max) => {
+const text = (v, max, trim = true) => {
   if (typeof v !== "string" || v.length > max)
     throw store.error("Ungültige Eingabe oder Text zu lang.");
-  return v.trim();
+  return trim ? v.trim() : v;
 };
 const date = (v) => {
   if (
@@ -64,18 +143,27 @@ function update(meeting, input, state) {
     const person =
       people.find((u) => u.id === p.id) ||
       meeting.people.find((u) => u.id === p.id);
-    if (
-      !person ||
-      !attendance.includes(p.status) ||
-      typeof p.mail !== "boolean"
-    )
+    if (!person || !attendance.includes(p.status))
       throw store.error("Ungültige Person oder Anwesenheit.");
-    return { id: person.id, name: person.name, status: p.status, mail: p.mail };
+    return { id: person.id, name: person.name, status: p.status };
   });
   if (new Set(selected.map((p) => p.id)).size !== selected.length)
     throw store.error("Doppelte Teilnehmende.");
   if (input.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time))
     throw store.error("Ungültige Uhrzeit.");
+  const currentAgenda = agendaFor(meeting);
+  const currentItems = new Map(currentAgenda.map((item) => [item.id, item]));
+  const submittedAgenda = new Map(
+    (Array.isArray(input.agendaItems) ? input.agendaItems : []).map((item) => [
+      item?.id,
+      item,
+    ]),
+  );
+  const agendaItems =
+    submittedAgenda.size === currentItems.size &&
+    [...submittedAgenda.keys()].every((id) => currentItems.has(id))
+      ? [...submittedAgenda.keys()].map((id) => currentItems.get(id))
+      : currentAgenda;
   return {
     ...meeting,
     version: meeting.version + 1,
@@ -83,11 +171,19 @@ function update(meeting, input, state) {
     time: text(input.time, 5),
     chair: text(input.chair, 200),
     people: selected,
-    agenda: text(input.agenda, 50000),
-    decisions: text(input.decisions, 50000),
-    topics: text(input.topics, 50000),
+    agenda: meeting.agenda || "",
+    agendaItems: agendaItems.map((item) => ({
+      ...item,
+      notes: text(
+        submittedAgenda.get(item.id)?.notes ?? item.notes,
+        50000,
+        false,
+      ),
+    })),
+    decisions: text(input.decisions, 50000, false),
+    topics: text(input.topics, 50000, false),
     nextDate: input.nextDate ? date(input.nextDate) : "",
-    summary: text(input.summary, 50000),
+    summary: text(input.summary, 50000, false),
     items: input.items.map((item) => {
       if (
         !statuses.includes(item.status) ||
@@ -172,58 +268,61 @@ module.exports = async function jourfix(req, res, { body, json }) {
         settings.access[kind] = [...new Set(value.access)];
         put(configId, settings);
       }
-      if (value.template !== undefined) {
-        if (value.template === "")
-          store.db
-            .prepare("DELETE FROM leadership_meetings WHERE id=?")
-            .run(templateId(kind));
-        else {
-          const bytes = Buffer.from(text(value.template, 1900000), "base64");
-          put(templateId(kind), {
-            file: bytes.toString("base64"),
-            questions: require("./server-jourfix-word.cjs")(bytes),
-          });
-        }
-      }
       store.audit(user, "jourfix.settings", { kind });
       state.revision++;
       store.persist(state);
     });
     return response({ ok: true });
   }
-  if (id === "template" && ["GET", "HEAD"].includes(req.method)) {
-    const template = read(templateId(kind));
-    if (!template) throw store.error("Keine Word-Vorlage hinterlegt.", 404);
-    sendFile(
-      req,
-      res,
-      Buffer.from(template.file, "base64"),
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Jourfix-Vorlage.docx",
+  if (kind === "epc" && id === "agenda" && req.method === "POST") {
+    const value = await input();
+    const title = text(value.title, 300);
+    if (!title) throw store.error("Bitte ein Traktandum eingeben.");
+    return response(
+      store.locked(() => {
+        authorize(kind);
+        const draft = records().find(
+          (m) => m.jourfix === kind && m.status === "draft",
+        );
+        const item = { id: crypto.randomUUID(), title, notes: "" };
+        if (draft) {
+          draft.agendaItems = [...agendaFor(draft), item];
+          draft.version++;
+          put(draft.id, draft);
+        } else {
+          const pending = read(agendaId) || [];
+          put(agendaId, [...pending, item]);
+        }
+        return { ok: true };
+      }),
     );
-    return true;
   }
   if (!id && req.method === "GET") {
     const settings = config();
     const people = activeUsers(state);
+    const meetings = records();
+    const draft = meetings.find(
+      (m) => m.jourfix === kind && m.status === "draft",
+    );
     return response({
       title: titles[kind],
-      template: !!store.db
-        .prepare("SELECT 1 FROM leadership_meetings WHERE id=?")
-        .get(templateId(kind)),
-      people: people
-        .filter((u) => isAdministrator(user) || allowed(u, kind, settings))
-        .map((u) => ({
-          id: u.id,
-          name: u.name,
-          email: !!u.email,
-          admin: isAdministrator(u),
-          access: allowed(u, kind, settings),
-        })),
+      canPrepare: canPrepare(user),
+      upcoming:
+        kind === "epc"
+          ? (draft ? agendaFor(draft) : read(agendaId) || []).map(
+              ({ id, title }) => ({ id, title }),
+            )
+          : [],
+      people: people.map((u) => ({
+        id: u.id,
+        name: u.name,
+        admin: isAdministrator(u),
+        access: allowed(u, kind, settings),
+      })),
       networks: (state.data.structure?.networks || [])
         .filter((n) => !n.deleted && !n.hidden)
         .map((n) => ({ id: n.id, name: n.name })),
-      meetings: records()
+      meetings: meetings
         .filter(
           (m) =>
             m.jourfix === kind ||
@@ -239,6 +338,7 @@ module.exports = async function jourfix(req, res, { body, json }) {
           date: m.date,
           time: m.time,
           status: m.status,
+          open: m.open !== false,
           title: m.title,
         })),
     });
@@ -249,12 +349,15 @@ module.exports = async function jourfix(req, res, { body, json }) {
         ({ user, state } = authorize(kind));
         const list = records().filter((m) => m.jourfix === kind);
         const existing = list.find((m) => m.status === "draft");
-        if (existing) return existing;
+        if (existing && existing.open !== false) return publicMeeting(existing);
+        if (kind === "epc" && !canPrepare(user))
+          throw store.error("Die Leitung bereitet den Jourfix vor.", 403);
+        if (existing) return publicMeeting(existing);
         const previous = list
           .filter((m) => m.status === "closed")
           .sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0];
         const now = new Date();
-        const questions = read(templateId(kind))?.questions || "";
+
         const meeting = {
           id: crypto.randomUUID(),
           jourfix: kind,
@@ -270,15 +373,24 @@ module.exports = async function jourfix(req, res, { body, json }) {
           time: "",
           chair: "",
           people: [],
-          agenda: kind === "epc" ? questions : "",
-          topics: kind === "wvm" ? questions : "",
+          open: kind !== "epc",
+          agenda: "",
+          agendaItems: kind === "epc" ? read(agendaId) || [] : [],
+          topics: "",
           decisions: "",
           summary: "",
           nextDate: "",
-          items: previous?.items.filter((p) => p.status !== "Erledigt") || [],
+          items:
+            kind === "wvm"
+              ? previous?.items.filter((p) => p.status !== "Erledigt") || []
+              : [],
         };
         put(meeting.id, meeting);
-        return meeting;
+        if (kind === "epc")
+          store.db
+            .prepare("DELETE FROM leadership_meetings WHERE id=?")
+            .run(agendaId);
+        return publicMeeting(meeting);
       }),
     );
   const meetingForRoute = () => {
@@ -288,7 +400,7 @@ module.exports = async function jourfix(req, res, { body, json }) {
       (meeting.jourfix !== kind &&
         !(
           kind === "epc" &&
-          action === "pdf" &&
+          (action === "pdf" || req.method === "DELETE") &&
           !meeting.jourfix &&
           meeting.status === "closed"
         ))
@@ -297,6 +409,14 @@ module.exports = async function jourfix(req, res, { body, json }) {
     return meeting;
   };
   const meeting = meetingForRoute();
+  const checkPreparation = (actor, current) => {
+    if (current.open === false && !canPrepare(actor))
+      throw store.error(
+        "Die Leitung hat das Protokoll noch nicht geöffnet.",
+        403,
+      );
+  };
+  checkPreparation(user, meeting);
   if (
     action === "pdf" &&
     ["GET", "HEAD"].includes(req.method) &&
@@ -315,25 +435,55 @@ module.exports = async function jourfix(req, res, { body, json }) {
     );
     return true;
   }
-  if (!action && req.method === "GET") return response(meeting);
-  if (!action && req.method === "PUT") {
+  if (!action && req.method === "DELETE") {
+    return response(
+      store.locked(() => {
+        const { user } = authorize(kind, true);
+        const current = meetingForRoute();
+        if (current.status !== "closed")
+          throw store.error(
+            "Nur abgeschlossene Sitzungen können gelöscht werden.",
+            409,
+          );
+        store.db.prepare("DELETE FROM leadership_meetings WHERE id=?").run(id);
+        store.db
+          .prepare(
+            "UPDATE mail_outbox SET status='skipped' WHERE entry_id=? AND kind='Jourfix-Protokoll' AND status IN ('pending','retry')",
+          )
+          .run(id);
+        store.audit(user, "jourfix.deleted", { id, kind });
+        return { ok: true };
+      }),
+    );
+  }
+  if (!action && req.method === "GET") return response(publicMeeting(meeting));
+  if (!action && ["PUT", "PATCH"].includes(req.method)) {
     const value = await input();
     return response(
       store.locked(() => {
-        const { state } = authorize(kind);
-        const saved = update(meetingForRoute(), value, state);
+        const { state, user } = authorize(kind);
+        const current = meetingForRoute();
+        checkPreparation(user, current);
+        const saved = update(
+          current,
+          req.method === "PATCH" ? patchInput(current, value.changes) : value,
+          state,
+        );
+        if (value.publish === true && current.open === false) {
+          if (!saved.time) throw store.error("Bitte die Uhrzeit eingeben.");
+          saved.open = true;
+        }
         put(id, saved);
-        return saved;
+        return publicMeeting(saved);
       }),
     );
   }
   if (action === "close" && req.method === "POST") {
     const value = await input();
+    if (meeting.open === false)
+      throw store.error("Bitte zuerst den Entwurf bereitstellen.");
     const saved = update(meeting, value, state);
-    if (!saved.time || (kind === "epc" && !saved.chair))
-      throw store.error(
-        "Bitte Uhrzeit und gegebenenfalls Sitzungsleitung eintragen.",
-      );
+    if (!saved.time) throw store.error("Bitte die Uhrzeit eingeben.");
     if (saved.items.some((p) => !p.title))
       throw store.error("Bitte leere Pendenzen ausfüllen oder entfernen.");
     const closed = {
@@ -353,10 +503,7 @@ module.exports = async function jourfix(req, res, { body, json }) {
             409,
           );
         const recipients = activeUsers(state).filter(
-          (u) =>
-            closed.people.some((p) => p.id === u.id && p.mail) &&
-            u.email &&
-            allowed(u, kind),
+          (u) => closed.people.some((p) => p.id === u.id) && u.email,
         );
         put(id, closed, pdf);
         const enqueue = store.db.prepare(
@@ -371,7 +518,11 @@ module.exports = async function jourfix(req, res, { body, json }) {
             "{}",
           );
         store.audit(user, "jourfix.closed", { id, kind });
-        return { ...closed, queued: recipients.length };
+        return {
+          ...closed,
+          queued: recipients.length,
+          missingEmail: closed.people.length - recipients.length,
+        };
       }),
     );
   }

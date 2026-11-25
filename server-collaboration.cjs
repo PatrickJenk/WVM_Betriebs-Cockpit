@@ -546,9 +546,7 @@ async function worker() {
       const protocolMeeting = protocol && JSON.parse(protocol.json);
       const stale =
         job.kind === "Jourfix-Protokoll"
-          ? !protocol?.pdf ||
-            !u ||
-            !require("./server-jourfix.cjs").allowed(u, protocolMeeting.jourfix)
+          ? !protocol?.pdf || !u
           : !e ||
             (job.kind === "Aufgabenzuweisung" &&
               !group &&

@@ -91,3 +91,7 @@ Umgebungsvariable ist implementiert. Siehe [SMTP](EMAIL_NOTIFICATIONS.md).
 
 SSH-/GitHub-Zugänge sind separate Konten. Es gibt keine Actions-Secrets,
 Deploy-Webhooks oder automatische Repository-Synchronisierung.
+
+## Schrift der Sitzungsprotokolle
+
+`COCKPIT_VERDANA_DIR` kann auf einen privaten Serverordner mit den lizenzierten Dateien `verdana.ttf` und `verdanab.ttf` zeigen. Das Cockpit verwendet sonst die Verdana-Installation des Systems, sofern sie im Windows-Schriftenordner oder unter `/usr/share/fonts/truetype/msttcorefonts` liegt. Falls Verdana fehlt, werden die PDFs in Helvetica erzeugt.

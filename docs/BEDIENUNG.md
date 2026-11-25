@@ -29,6 +29,8 @@ Admins können **Anlagen verwalten** und die Register oder Ordner der Station pf
 
 ## Betriebsführung
 
-Admins sehen **Austausch EPC + WVM** und **JF WVM**. Unter **Zugriff und Word-Vorlage verwalten** geben sie Personen den jeweiligen Sitzungsbereich frei. Für den bisherigen Austausch gilt das Leitungsrecht, solange keine eigene Zugriffsliste gespeichert ist. Fragen aus einer hochgeladenen DOCX-Datei erscheinen als editierbarer Text in neuen Entwürfen.
+Admins sehen **Austausch EPC + WVM** und **JF WVM**. Unter **Zugriff verwalten** geben sie Personen den jeweiligen Sitzungsbereich frei. Beim Austausch gilt das Leitungsrecht, solange keine eigene Zugriffsliste gespeichert ist.
 
-Über **Jourfix vorbereiten** wird ein gemeinsamer Entwurf geöffnet. Alle Personen mit Zugriff können ihn bearbeiten und speichern. Beim **Jourfix abschliessen** wird das PDF im vertraulichen Sitzungsarchiv gespeichert. Für ausgewählte beteiligte Personen mit Zugriff und hinterlegter Adresse wird der Versand vorgemerkt. Der automatische E-Mail-Versand muss dafür aktiv sein. **JF WVM** übernimmt unerledigte Pendenzen in den nächsten Entwurf.
+Im Austausch erfassen berechtigte Personen auf der Übersichtsseite Traktanden für die nächste Sitzung. Admins und berechtigte Leitungsmitglieder wählen über **Jourfix vorbereiten** Datum, Uhrzeit und Teilnehmende. **Entwurf speichern** stellt das offene Sitzungsprotokoll oberhalb der Traktanden und des Archivs bereit. Die erfassten Traktanden erscheinen nummeriert und mit eigenen Notizfeldern im Protokoll. Über die Pfeile lässt sich die Traktandenliste in der Vorbereitung und im offenen Protokoll umsortieren. Änderungen an geöffneten Protokollen werden automatisch gespeichert und in anderen geöffneten Sitzungen angezeigt.
+
+Über **Sitzung abschliessen** speichert das Cockpit das PDF im vertraulichen Archiv und stellt den Mailversand an die ausgewählten Teilnehmenden mit hinterlegter Adresse in die Warteschlange. Admins können abgeschlossene Protokolle aus dem Archiv löschen. Automatischer Mailversand muss für die Zustellung aktiv sein. **JF WVM** übernimmt unerledigte Pendenzen in den nächsten Entwurf.
