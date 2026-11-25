@@ -482,8 +482,23 @@ module.exports = async function jourfix(req, res, { body, json }) {
     const value = await input();
     if (meeting.open === false)
       throw store.error("Bitte zuerst den Entwurf bereitstellen.");
-    const saved = update(meeting, value, state);
+    const saved = update(
+      meeting,
+      Object.hasOwn(value, "items")
+        ? value
+        : { ...meeting, version: value.version },
+      state,
+    );
     if (!saved.time) throw store.error("Bitte die Uhrzeit eingeben.");
+    // An untouched insert row is just a placeholder, even if autosaved.
+    saved.items = saved.items.filter(
+      (p) =>
+        p.title ||
+        p.responsible ||
+        p.due ||
+        p.networks.length ||
+        p.status !== "Offen",
+    );
     if (saved.items.some((p) => !p.title))
       throw store.error("Bitte leere Pendenzen ausfüllen oder entfernen.");
     const closed = {
@@ -506,6 +521,10 @@ module.exports = async function jourfix(req, res, { body, json }) {
           (u) => closed.people.some((p) => p.id === u.id) && u.email,
         );
         put(id, closed, pdf);
+        if (kind === "epc")
+          store.db
+            .prepare("DELETE FROM leadership_meetings WHERE id=?")
+            .run(agendaId);
         const enqueue = store.db.prepare(
           "INSERT INTO mail_outbox(event_key,user_id,entry_id,kind,payload) VALUES(?,?,?,?,?)",
         );

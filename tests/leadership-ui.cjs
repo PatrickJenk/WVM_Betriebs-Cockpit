@@ -223,10 +223,58 @@ module.exports = async function testLeadershipUI({ base, token, meetingId }) {
     document.querySelector("#jourfix-form").dataset.dirty = "true";
     await callbacks[0]();
     assert.equal(jourfix.isDirty(), false, messages.join(" / "));
+    const forward = global.fetch;
+    let committed, release;
+    const responseStarted = new Promise((resolve) => {
+      committed = resolve;
+    });
+    const responseGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    global.fetch = async (url, init) => {
+      const response = await forward(url, init);
+      if (init?.method === "PATCH") {
+        committed();
+        await responseGate;
+      }
+      return response;
+    };
+    document.querySelector("#jourfix-add").onclick();
+    const firstSave = callbacks[0]();
+    await Promise.race([
+      responseStarted,
+      firstSave.then(() => {
+        throw Error("Pendenz wurde nicht gespeichert: " + messages.join(" / "));
+      }),
+    ]);
+    const pending = document.querySelector(
+      '[data-jourfix-item] [name="title"]',
+    );
+    pending.value = "Während des Speicherns ergänzt";
+    document.querySelector("#jourfix-form").dataset.dirty = "true";
+    global.fetch = forward;
+    release();
+    await firstSave;
+    await callbacks[0]();
+    assert.equal(jourfix.isDirty(), false, messages.join(" / "));
+    await jourfix.render(true);
+    assert.equal(
+      document.querySelector('[data-jourfix-item] [name="title"]').value,
+      "Während des Speicherns ergänzt",
+    );
+    document.querySelector("#jourfix-add").onclick();
     await document.querySelector("#jourfix-close").onclick(event);
     assert.equal(location.hash, "#jourfix/epc", messages.join(" / "));
     await jourfix.render();
     assert.ok(document.querySelector("[data-jourfix-pdf]"));
+    assert.equal(document.querySelector('a[href^="#jourfix/epc/"]'), null);
+    assert.equal(
+      document
+        .querySelector("#jourfix-agenda")
+        .closest("section")
+        .querySelectorAll("li").length,
+      0,
+    );
   } finally {
     await waitFor(() => requests === 0);
     global.fetch = originalFetch;

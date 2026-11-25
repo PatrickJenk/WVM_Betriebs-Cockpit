@@ -39,7 +39,8 @@ export function createJourfix({ user, esc, toast }) {
   const options = (values, selected) =>
     values
       .map(
-        (v) => `<option ${selected === v ? "selected" : ""}>${esc(v)}</option>`,
+        (v) =>
+          `<option value="${esc(v)}" ${selected === v ? "selected" : ""}>${esc(v)}</option>`,
       )
       .join("");
   const field = (name, label, type = "text") =>
@@ -211,6 +212,7 @@ export function createJourfix({ user, esc, toast }) {
       if (!preparing) {
         clearTimeout(editTimer);
         editTimer = setTimeout(backgroundSync, 500);
+        editTimer?.unref?.();
       }
     };
     form.addEventListener("click", (event) => {
@@ -344,14 +346,7 @@ export function createJourfix({ user, esc, toast }) {
           const result = await request(
             path(kind, "/" + meeting.id + "/close"),
             "POST",
-            {
-              ...meeting,
-              ...values(),
-              agendaItems: meeting.agendaItems.map((item) => ({
-                ...item,
-                notes: values()["note:" + item.id],
-              })),
-            },
+            { version: meeting.version },
           );
           form.dataset.dirty = "";
           toast(
@@ -403,8 +398,8 @@ export function createJourfix({ user, esc, toast }) {
       })),
       items: form.querySelector("tbody")
         ? [...form.querySelectorAll("[data-jourfix-item]")].map((p) => ({
-            title: controls(p, "title").value,
-            responsible: controls(p, "responsible").value,
+            title: controls(p, "title").value.trim(),
+            responsible: controls(p, "responsible").value.trim(),
             due: controls(p, "due").value,
             status: controls(p, "itemStatus").value,
             networks: [...p.querySelectorAll('[name="network"]:checked')].map(
@@ -421,7 +416,7 @@ export function createJourfix({ user, esc, toast }) {
     };
   }
   const isDirty = () => form?.isConnected && form.dataset.dirty === "true";
-  function reconcile(next, sent, target) {
+  function reconcile(next, sent, target, changes = {}) {
     if (form !== target || !target.isConnected) return;
     const local = values();
     const remote = snapshot(next);
@@ -429,13 +424,14 @@ export function createJourfix({ user, esc, toast }) {
       (key) => !same(local[key], sent[key]),
     );
     if (remaining.length) {
-      // Changes typed during a request retain their original merge baseline.
-      for (const key of Object.keys(sent))
-        if (!remaining.includes(key)) baseline[key] = sent[key];
+      // Rebase only fields actually saved by this request. A concurrent change
+      // to an untouched field must still be detected on its next save.
+      for (const key of Object.keys(changes)) baseline[key] = remote[key];
       meeting.version = next.version;
       target.dataset.dirty = "true";
       clearTimeout(editTimer);
       editTimer = setTimeout(backgroundSync, 500);
+      editTimer?.unref?.();
       return;
     }
     const redraw = Object.keys(remote).some(
@@ -484,7 +480,7 @@ export function createJourfix({ user, esc, toast }) {
     syncInFlight = request(path(meeting.jourfix, "/" + meeting.id), "PATCH", {
       changes,
       publish,
-    }).then((next) => reconcile(next, current, target));
+    }).then((next) => reconcile(next, current, target, changes));
     try {
       await syncInFlight;
       syncError = false;
