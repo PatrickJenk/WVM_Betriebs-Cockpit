@@ -22,7 +22,7 @@ const fs = require("node:fs"),
   const { controlSheetTab, generalDocumentationId, siteTabs } =
     await import("../src/services/structure.js");
   const { createDocuments } = await import("../src/features/documents.js");
-  const { newestControlSheetFirst } =
+  const { controlTemplateChoices, newestControlSheetFirst } =
     await import("../src/services/control-sheet.js");
   const { createDashboard } = await import("../src/features/dashboard.js");
   const { createControlRounds } =
@@ -104,6 +104,7 @@ const fs = require("node:fs"),
       createDocuments,
       createDashboard,
       createControlRounds,
+      controlTemplateChoices,
       newestControlSheetFirst,
       createCollaboration,
       createLeadership,
@@ -235,6 +236,52 @@ const fs = require("node:fs"),
   assert.doesNotMatch(archiveView, /archive-other\.pdf/);
   data.documents.splice(-archived.length);
   assert.match(node("#content").innerHTML, /Neuer Kontrollrundgang/);
+  const previousTemplates = data.controlTemplates;
+  data.controlTemplates = [
+    {
+      id: "weekly-card",
+      siteId: "eiger",
+      title: "Wöchentlicher Rundgang",
+      interval: "Wöchentlich",
+      kind: "standard",
+    },
+    {
+      id: "yearly-card",
+      siteId: "eiger",
+      title: "Jährlicher Rundgang",
+      interval: "Jährlich",
+      kind: "standard",
+    },
+    {
+      id: "other-card",
+      siteId: "milch",
+      title: "Andere Heizzentrale",
+      kind: "standard",
+    },
+  ];
+  const cardsView = vm.runInContext("controlSheetView('eiger')", context);
+  assert.equal((cardsView.match(/data-control-template=/g) || []).length, 3);
+  assert.match(
+    cardsView,
+    /data-control-template="weekly-card"[^]*?Wöchentlicher Rundgang[^]*?<small>Wöchentlich<\/small>/,
+  );
+  assert.match(cardsView, /data-control-template="yearly-card"/);
+  assert.doesNotMatch(cardsView, /other-card/);
+  const card = { dataset: { controlTemplate: "weekly-card" } };
+  const rounds = vm.runInContext("controlRounds", context);
+  const createRound = rounds.create;
+  let opened;
+  rounds.create = (...args) => {
+    opened = args;
+  };
+  context.document.querySelectorAll = (selector) =>
+    selector === "[data-control-template]" ? [card] : [];
+  vm.runInContext("bindControlSheet('eiger')", context);
+  card.onclick();
+  assert.deepEqual(opened, ["eiger", "weekly-card"]);
+  rounds.create = createRound;
+  context.document.querySelectorAll = () => [];
+  data.controlTemplates = previousTemplates;
   assert.doesNotMatch(
     node("#content").innerHTML,
     /Rundgang-Notizen|Abgeschlossene Rundgänge/,

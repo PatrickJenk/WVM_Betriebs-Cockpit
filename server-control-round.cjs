@@ -3,11 +3,12 @@ const store = require("./server-security.cjs");
 const examples = require("./src/data/control-round-examples.json");
 const {
   controlChoices,
+  controlTemplateChoices,
   isRoundSection,
   roundPointLabel,
+  standardControlTemplate: standard,
 } = require("./src/services/control-sheet.js");
 
-const standard = "standard";
 const versionOf = (...values) =>
   crypto.createHash("sha256").update(JSON.stringify(values)).digest("hex");
 
@@ -93,20 +94,10 @@ function forms(state, siteId, authorId, templateId = standard) {
     ]),
   );
   const [date, time] = clock.format(new Date(startedAt)).split(" ");
-  const { title, interval } =
-    templateId === standard ? form : findForm(state, siteId);
   return {
     base: baseForm(state),
     form,
-    templates: [
-      { id: standard, title, interval },
-      ...(state.data.controlTemplates || [])
-        .filter(
-          (entry) =>
-            entry.siteId === siteId && entry.kind === standard && entry.id,
-        )
-        .map(({ id, title, interval }) => ({ id, title, interval })),
-    ],
+    templates: controlTemplateChoices(state.data.controlTemplates, siteId),
     start: { id, startToken, date, time },
   };
 }
