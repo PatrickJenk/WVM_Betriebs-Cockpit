@@ -34,3 +34,6 @@ export const controlDateLabel = (date) => date.split("-").reverse().join(".");
 export const isRoundSection = (point) => point?.type === "section";
 export const roundPointLabel = (point) =>
   typeof point === "string" ? point : point.label;
+
+export const newestControlSheetFirst = (a, b) =>
+  (Date.parse(b.uploadedAt) || 0) - (Date.parse(a.uploadedAt) || 0);

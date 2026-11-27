@@ -40,6 +40,7 @@ import { createLogbook } from "./features/logbook.js";
 import { createDocuments } from "./features/documents.js";
 import { createDashboard } from "./features/dashboard.js";
 import { createControlRounds } from "./features/control-rounds.js";
+import { newestControlSheetFirst } from "./services/control-sheet.js";
 let data;
 try {
   data = repository.load();
@@ -343,9 +344,25 @@ function controlTemplate(siteId) {
 }
 function controlSheetView(siteId) {
   const template = controlTemplate(siteId);
+  const archive = data.documents
+    .filter((doc) => doc.siteId === siteId && doc.controlRun)
+    .sort(newestControlSheetFirst);
+  const runs = new Map(
+    (data.controlRuns || []).map((run) => [run.documentId, run]),
+  );
   return `<div class="panel-heading"><h2>Kontrollblatt</h2>${isAdministrator(user) ? '<button type="button" class="secondary" id="control-edit-template">Vorlagen bearbeiten</button>' : ""}</div>
     <div class="form-body"><button class="control-open-card secondary" type="button" id="control-open">${icon("file")}<span><strong>Neuer Kontrollrundgang</strong><small>Kontrollblatt öffnen</small></span></button></div>
-    ${template?.sourceId ? '<details class="form-body"><summary>Bisherige PDF-Vorlage</summary><button type="button" class="secondary" id="control-open-pdf">PDF-Vorlage öffnen</button></details>' : ""}`;
+    ${template?.sourceId ? '<details class="form-body"><summary>Bisherige PDF-Vorlage</summary><button type="button" class="secondary" id="control-open-pdf">PDF-Vorlage öffnen</button></details>' : ""}
+    ${
+      archive.length
+        ? `<div class="form-body"><h3>Abgelegte Kontrollblätter</h3><div class="table-scroll"><table class="explorer-files"><thead><tr><th>Kontrollblatt</th><th>Kontrollintervall</th><th>Erstellt am</th></tr></thead><tbody>${archive
+            .map((doc) => {
+              const run = runs.get(doc.id);
+              return `<tr><td><a href="/api/files/${encodeURIComponent(doc.id)}?inline=1" target="_blank" rel="noopener noreferrer">${esc(run?.title || doc.name)}</a></td><td>${esc(run?.interval || "–")}</td><td>${esc(fmt(doc.uploadedAt))}</td></tr>`;
+            })
+            .join("")}</tbody></table></div></div>`
+        : ""
+    }`;
 }
 async function openControlSheet(siteId, template) {
   show(`<div class="modal-heading"><div><h2>${esc(template.title || "Kontrollblatt")}</h2><p>${esc(site(siteId).name)}</p></div><button type="button" class="close icon-button" aria-label="Schliessen">×</button></div>

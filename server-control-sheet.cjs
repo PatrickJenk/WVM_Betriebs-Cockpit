@@ -261,7 +261,14 @@ module.exports = async function controlSheet(
         d.id === id && d.siteId === siteId && d.mimeType === "application/pdf",
     );
   if (mode === "form" && !editingForm) {
-    json(res, 200, round.forms(initial, siteId, actor.id));
+    const templateId = new URL(req.url, "http://localhost").searchParams.get(
+      "templateId",
+    );
+    json(
+      res,
+      200,
+      round.forms(initial, siteId, actor.id, templateId ?? undefined),
+    );
     return true;
   }
   if (mode === "report") {
@@ -338,6 +345,7 @@ module.exports = async function controlSheet(
       store.audit(u, "control.template.updated", {
         siteId,
         scope: input.scope,
+        templateId: input.templateId,
       });
       return visible(state, u);
     });
@@ -436,7 +444,9 @@ module.exports = async function controlSheet(
     return true;
   }
   const selectTemplate = (state) =>
-    digital ? round.findForm(state, siteId) : findTemplate(state);
+    digital
+      ? round.findForm(state, siteId, input.templateId)
+      : findTemplate(state);
   const source = selectTemplate(initial);
   if (
     !source ||

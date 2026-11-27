@@ -165,6 +165,7 @@ function renderRoundPdf(run, logo) {
     ];
     const roundType = run.roundType || controlKindLabel(run.kind);
     if (roundType) details.push(["Art des Kontrollrundgangs", roundType]);
+    if (run.interval) details.push(["Kontrollintervall", run.interval]);
     for (const [label, value] of details) {
       doc.font("Helvetica").fontSize(textSize);
       const lines = wrap(doc, value, tableWidth - 164);

@@ -1678,11 +1678,13 @@ textarea {
   overflow: hidden;
 }
 #modal.control-round-dialog[open],
+#control-template-picker,
 #control-round-form,
 #control-form-editor {
   display: flex;
   flex-direction: column;
 }
+#control-template-picker,
 #control-round-form,
 #control-form-editor {
   min-height: 0;

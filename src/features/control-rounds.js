@@ -6,6 +6,7 @@ import {
 } from "../services/control-sheet.js";
 import { isAdministrator } from "../auth/roles.js";
 import { formDraft } from "../services/form-drafts.js";
+import { uuid } from "../services/ids.js";
 
 export function createControlRounds({
   data,
@@ -21,11 +22,16 @@ export function createControlRounds({
   recoverSession,
 }) {
   const drafts = new Map();
-  const configuration = (siteId) =>
+  const configuration = (siteId, templateId) =>
     repository.call(
       "GET",
-      "/api/sites/" + encodeURIComponent(siteId) + "/control-form",
+      "/api/sites/" +
+        encodeURIComponent(siteId) +
+        "/control-form" +
+        (templateId ? "?templateId=" + encodeURIComponent(templateId) : ""),
     );
+  const templateLabel = ({ title, interval }) =>
+    [title, interval].filter(Boolean).join(" · ");
   const heading = (label) =>
     `<div class="modal-heading"><h2>${esc(label)}</h2><button type="button" class="close icon-button" aria-label="Schliessen">×</button></div>`;
   const field = (form, name) => form.elements.namedItem(name);
@@ -50,6 +56,7 @@ export function createControlRounds({
 
   function openPaper(html) {
     show(html);
+    if (modal.classList.contains("control-round-dialog")) return;
     modal.classList.add("control-round-dialog");
     modal.addEventListener(
       "close",
@@ -60,10 +67,14 @@ export function createControlRounds({
     );
   }
 
-  function create(siteId) {
-    let definition, start;
+  function create(siteId, templateId) {
+    let definition, start, templates;
     try {
-      ({ form: definition, start } = configuration(siteId));
+      ({
+        form: definition,
+        start,
+        templates,
+      } = configuration(siteId, templateId));
       if (!definition || !start)
         throw Error(
           "Der Server muss für diese Kontrollblatt-Version neu gestartet werden.",
@@ -72,8 +83,30 @@ export function createControlRounds({
       toast(error.message);
       return;
     }
-    const saved = formDraft(user.id, "control-round", siteId);
-    const previous = drafts.get(siteId) || saved.read();
+    if (!templateId && templates?.length > 1) {
+      openPaper(
+        `<form id="control-template-picker">${heading("Kontrollrundgang erfassen")}${paper(
+          "Kontrollblatt auswählen",
+          site(siteId).name,
+          `<label>Vorlage<select name="templateId">${options(
+            templates.map((entry) => [entry.id, templateLabel(entry)]),
+            definition.id,
+          )}</select></label>`,
+        )}<div class="modal-footer round-footer"><button type="submit" class="primary">Kontrollblatt öffnen</button></div></form>`,
+      );
+      const picker = modal.querySelector("#control-template-picker");
+      picker.onsubmit = (event) => {
+        event.preventDefault();
+        create(siteId, field(picker, "templateId").value);
+      };
+      return;
+    }
+    const key =
+      !definition.id || definition.id === "standard"
+        ? siteId
+        : siteId + ":" + definition.id;
+    const saved = formDraft(user.id, "control-round", key);
+    const previous = drafts.get(key) || saved.read();
     const columns = definition.columns || [];
     const fixedColumns = definition.fixedColumns || [];
     let draft = previous?.userId === user.id ? previous : undefined;
@@ -106,7 +139,7 @@ export function createControlRounds({
             };
           }),
       };
-      drafts.set(siteId, draft);
+      drafts.set(key, draft);
     }
     let answerIndex = 0;
     const rows = definition.effectivePoints
@@ -139,6 +172,7 @@ export function createControlRounds({
       <div class="round-fields round-metadata">
         <dl class="round-facts"><dt>Datum und Uhrzeit</dt><dd>${esc(controlDateLabel(draft.stamp.date))} · ${esc(draft.stamp.time)} Uhr</dd></dl>
         <dl class="round-facts"><dt>Kontrollierende Person</dt><dd>${esc(user.name)}</dd></dl>
+        ${definition.interval ? `<dl class="round-facts"><dt>Kontrollintervall</dt><dd>${esc(definition.interval)}</dd></dl>` : ""}
         ${type}
       </div>
       ${definition.example ? '<p class="muted">Kontrollpunkte aus der gemeinsamen Grundvorlage.</p>' : ""}
@@ -182,13 +216,14 @@ export function createControlRounds({
             id: draft.stamp.id,
             startToken: draft.stamp.startToken,
             version: draft.version,
+            templateId: definition.id,
             roundType: draft.roundType,
             answers: draft.rows,
             remarks: draft.remarks,
           },
           data,
         );
-        drafts.delete(siteId);
+        drafts.delete(key);
         saved.clear();
         modal.close();
         render();
@@ -236,11 +271,34 @@ export function createControlRounds({
     const previous = saved.read();
     const copies = new Map(previous?.copies || []);
     let scope = previous?.scope || "site";
+    let newTemplateId = previous?.newTemplateId;
+    const standardId = "standard";
+    const isAdditional = () => !["site", "base", "new"].includes(scope);
+    const newTemplate = {
+      version: "",
+      points: [""],
+      useBase: false,
+      folderId: config.form.folderId,
+    };
+    const currentTemplate = () =>
+      scope === "base"
+        ? config.base
+        : scope === "new"
+          ? newTemplate
+          : config.form;
+    if (isAdditional()) {
+      try {
+        config = configuration(siteId, scope);
+      } catch (error) {
+        toast(error.message);
+        scope = "site";
+      }
+    }
     openPaper(`<form id="control-form-editor">${heading("Kontrollblatt-Vorlagen")}${paper(
       "Kontrollblatt",
       site(siteId).name,
       `
-      <label>Vorlage<select name="scope"><option value="site">Diese Heizzentrale</option><option value="base">Gemeinsame Grundvorlage</option></select></label>
+      <label>Vorlage<select name="scope"></select></label>
       <div data-template-fields></div>`,
     )}
       <div class="modal-footer round-footer"><p data-template-status role="status"></p><button class="secondary" type="button" data-template-discard hidden>Entwurf verwerfen</button><button class="primary" type="submit">Vorlage speichern</button></div></form>`);
@@ -249,7 +307,22 @@ export function createControlRounds({
     const fields = form.querySelector("[data-template-fields]");
     const discard = form.querySelector("[data-template-discard]");
     const selectScope = field(form, "scope");
-    selectScope.value = scope;
+    function showTemplates() {
+      selectScope.innerHTML = options(
+        [
+          ...(
+            config.templates || [{ id: standardId, title: config.form.title }]
+          ).map((entry) => [
+            entry.id === standardId ? "site" : entry.id,
+            templateLabel(entry),
+          ]),
+          ["base", "Gemeinsame Grundvorlage"],
+          ["new", "+ Neue Vorlage"],
+        ],
+        scope,
+      );
+    }
+    showTemplates();
     const pointValues = () =>
       Array.from(form.querySelectorAll("[data-template-point]"), (input) => {
         if (input.dataset.templatePoint === "section")
@@ -345,13 +418,13 @@ export function createControlRounds({
 
     function showFields() {
       discard.hidden = !copies.has(scope);
-      const current =
-        copies.get(scope)?.values ||
-        (scope === "base" ? config.base : config.form);
+      const current = copies.get(scope)?.values || currentTemplate();
       fields.innerHTML = `${
-        scope === "site"
+        scope !== "base"
           ? `<div class="round-template-options">
-        <label>Titel des Kontrollblatts<input name="title" maxlength="100" value="${esc(current.title || "")}"></label>
+        <label>Titel des Kontrollblatts<input name="title" maxlength="100" ${scope !== "site" ? "required" : ""} value="${esc(current.title || "")}"></label>
+        <label>Kontrollintervall<input name="interval" list="control-intervals" maxlength="100" ${scope !== "site" ? "required" : ""} value="${esc(current.interval || "")}"></label>
+        <datalist id="control-intervals"><option value="Wöchentlich"><option value="Monatlich"><option value="Vierteljährlich"><option value="Halbjährlich"><option value="Jährlich"><option value="Nach Bedarf"></datalist>
         <label>Ablageordner für PDFs<select name="folderId">${options(folderOptions, current.folderId)}</select></label>
         <label class="check-label"><input type="checkbox" name="useBase" ${current.useBase ? "checked" : ""}> Gemeinsame Grundvorlage verwenden</label>
         <label class="check-label"><input type="checkbox" name="useTypes" ${(current.useTypes ?? !!current.roundTypes?.length) ? "checked" : ""}> Rundgangsart abfragen</label>
@@ -362,7 +435,7 @@ export function createControlRounds({
         <p class="muted" data-fixed-base-note hidden>Für Fixtexte bei übernommenen Kontrollpunkten zuerst «Gemeinsame Grundvorlage verwenden» abwählen.</p>
         <div data-template-rows></div><div class="round-point-actions"><button type="button" class="secondary round-add-point" data-point-action="add">+ Kontrollpunkt ergänzen</button>
         <button type="button" class="secondary round-add-point" data-point-action="add-section">+ Abschnittstitel ergänzen</button></div>`;
-      if (scope === "site") {
+      if (scope !== "base") {
         renderColumns(current.columns || [], current.fixedColumns || []);
         renderTypes(current.roundTypes?.length ? current.roundTypes : [""]);
       }
@@ -476,6 +549,7 @@ export function createControlRounds({
       return {
         points,
         title: field(form, "title").value,
+        interval: field(form, "interval").value,
         columns: columnValues(),
         fixedColumns: fixedValues(),
         folderId: field(form, "folderId").value,
@@ -485,21 +559,21 @@ export function createControlRounds({
       };
     }
     function storeCopies() {
-      if (copies.size) saved.write({ scope, copies: [...copies] });
+      if (copies.size)
+        saved.write({ scope, copies: [...copies], newTemplateId });
       else saved.clear();
     }
     function remember() {
       copies.set(scope, {
         values: editorValues(),
-        version:
-          copies.get(scope)?.version ??
-          (scope === "base" ? config.base : config.form).version,
+        version: copies.get(scope)?.version ?? currentTemplate().version,
       });
       storeCopies();
       discard.hidden = false;
     }
     discard.onclick = () => {
       copies.delete(scope);
+      if (scope === "new") newTemplateId = undefined;
       storeCopies();
       showFields();
       status.textContent = "";
@@ -517,7 +591,17 @@ export function createControlRounds({
         remember();
     });
     selectScope.onchange = (event) => {
-      scope = event.target.value;
+      const next = event.target.value;
+      try {
+        if (next !== "new" && next !== "base")
+          config = configuration(siteId, next === "site" ? undefined : next);
+      } catch (error) {
+        selectScope.value = scope;
+        status.textContent = error.message;
+        recoverSession?.(error);
+        return;
+      }
+      scope = next;
       storeCopies();
       status.textContent = "";
       showFields();
@@ -525,15 +609,20 @@ export function createControlRounds({
     form.onsubmit = (event) => {
       event.preventDefault();
       const current = editorValues();
+      if (scope === "new") {
+        newTemplateId ??= uuid();
+        remember();
+      }
+      const templateId =
+        scope === "new" ? newTemplateId : isAdditional() ? scope : undefined;
       try {
         repository.saveControlSheet(
           siteId,
           "form",
           {
-            scope,
-            version:
-              copies.get(scope)?.version ??
-              (scope === "base" ? config.base : config.form).version,
+            scope: scope === "base" ? "base" : "site",
+            templateId,
+            version: copies.get(scope)?.version ?? currentTemplate().version,
             ...current,
             roundTypes: current.useTypes ? current.roundTypes : [],
             points: current.points.map((point) => {
@@ -547,9 +636,14 @@ export function createControlRounds({
           },
           data,
         );
+        config = configuration(siteId, templateId);
         copies.delete(scope);
+        if (scope === "new") {
+          scope = templateId;
+          newTemplateId = undefined;
+        }
         storeCopies();
-        config = configuration(siteId);
+        showTemplates();
         showFields();
         status.textContent = "Vorlage gespeichert.";
       } catch (error) {

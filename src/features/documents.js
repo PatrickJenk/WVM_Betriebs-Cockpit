@@ -1,6 +1,7 @@
 import { isAdministrator } from "../auth/accounts.js";
 import { uuid } from "../services/ids.js";
 import { generalDocumentationId } from "../services/structure.js";
+import { newestControlSheetFirst } from "../services/control-sheet.js";
 // Explorer: Ordner, direkte Uploads, Vorschau und Dateiverwaltung.
 export function createDocuments(context) {
   const {
@@ -103,7 +104,12 @@ export function createDocuments(context) {
               : !d.folderId && tab === "docs") &&
           (!query || d.name.toLowerCase().includes(query)),
       )
-      .sort((a, b) => a.name.localeCompare(b.name, "de"));
+      .sort(
+        (a, b) =>
+          Number(!!b.controlRun) - Number(!!a.controlRun) ||
+          (a.controlRun && newestControlSheetFirst(a, b)) ||
+          a.name.localeCompare(b.name, "de"),
+      );
     const children = data.folders
       .filter(
         (f) =>
