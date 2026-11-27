@@ -152,6 +152,7 @@ function save() {
     repository.save(data);
     return true;
   } catch (error) {
+    recoverSession(error);
     toast(error.message || "Speichern fehlgeschlagen. Bitte erneut versuchen.");
     return false;
   }
@@ -559,6 +560,59 @@ function show(html, back) {
     close.before(button);
   }
 }
+let sessionDialog;
+function recoverSession(error) {
+  if (
+    error.status !== 401 ||
+    !modal.open ||
+    !user.id ||
+    sessionDialog ||
+    !modal.querySelector(
+      "#entry-form, #control-round-form, #control-form-editor",
+    )
+  )
+    return;
+  const accountId = user.id;
+  const dialog = document.createElement("dialog");
+  sessionDialog = dialog;
+  dialog.innerHTML = `<form class="form-body">
+    <h2>Erneut anmelden</h2>
+    <p>Deine Eingaben bleiben geöffnet. Melde dich mit demselben Konto an und speichere danach erneut.</p>
+    <label>Benutzername<input name="username" autocomplete="username" value="${esc(user.initials)}" required></label>
+    <label>Passwort<input name="password" type="password" autocomplete="current-password" required></label>
+    <p role="alert"></p>
+    <button type="submit" class="primary">Anmelden</button>
+    <button type="button" class="secondary">Abbrechen</button>
+  </form>`;
+  document.body.append(dialog);
+  dialog.addEventListener(
+    "close",
+    () => {
+      dialog.remove();
+      sessionDialog = null;
+    },
+    { once: true },
+  );
+  dialog.querySelector('button[type="button"]').onclick = () => dialog.close();
+  dialog.querySelector("form").onsubmit = (event) => {
+    event.preventDefault();
+    const fields = event.currentTarget.elements;
+    try {
+      repository.reauthenticate(
+        fields.username.value.trim(),
+        fields.password.value,
+        accountId,
+      );
+      dialog.close();
+      toast("Wieder angemeldet. Bitte speichere erneut.");
+    } catch (loginError) {
+      dialog.querySelector('[role="alert"]').textContent = loginError.message;
+    } finally {
+      fields.password.value = "";
+    }
+  };
+  dialog.showModal();
+}
 const getState = () =>
   location.hash === "#documentation"
     ? { current: generalDocumentationId, tab: "docs", filters, onlyOpen }
@@ -583,6 +637,8 @@ const context = {
   show,
   modal,
   save,
+  checkSession: repository.checkSession,
+  recoverSession,
   render,
   shell,
   toast,
@@ -719,7 +775,11 @@ async function route() {
 }
 window.addEventListener("hashchange", route);
 window.addEventListener("beforeunload", (event) => {
-  if (jourfix.isDirty()) {
+  if (
+    jourfix.isDirty() ||
+    (modal.open &&
+      modal.querySelector('#entry-form input[type="file"]')?.files.length)
+  ) {
     event.preventDefault();
     event.returnValue = "";
   }
@@ -758,7 +818,7 @@ setInterval(async () => {
       else if (!jourfix.active()) shell();
     }
   } catch (error) {
-    if (error.status === 401) accounts.logout();
+    if (error.status === 401 && !modal.open) accounts.logout();
   } finally {
     syncing = false;
   }

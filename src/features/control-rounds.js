@@ -5,6 +5,7 @@ import {
   roundPointLabel,
 } from "../services/control-sheet.js";
 import { isAdministrator } from "../auth/roles.js";
+import { formDraft } from "../services/form-drafts.js";
 
 export function createControlRounds({
   data,
@@ -17,6 +18,7 @@ export function createControlRounds({
   render,
   toast,
   repository,
+  recoverSession,
 }) {
   const drafts = new Map();
   const configuration = (siteId) =>
@@ -70,7 +72,8 @@ export function createControlRounds({
       toast(error.message);
       return;
     }
-    const previous = drafts.get(siteId);
+    const saved = formDraft(user.id, "control-round", siteId);
+    const previous = drafts.get(siteId) || saved.read();
     const columns = definition.columns || [];
     const fixedColumns = definition.fixedColumns || [];
     let draft = previous?.userId === user.id ? previous : undefined;
@@ -145,6 +148,7 @@ export function createControlRounds({
       <div class="modal-footer round-footer"><p data-round-status role="alert">${changed ? "Die Vorlage wurde aktualisiert. Bitte die Kontrollpunkte prüfen." : ""}</p><button class="primary" type="submit">Kontrollblatt speichern</button></div></form>`);
     const form = modal.querySelector("#control-round-form");
     const status = form.querySelector("[data-round-status]");
+    if (draft.dirty) status.textContent = "Entwurf wiederhergestellt.";
     function remember() {
       draft.roundType = field(form, "roundType")?.value || "";
       draft.remarks = field(form, "remarks").value;
@@ -159,13 +163,13 @@ export function createControlRounds({
     form.oninput = () => {
       remember();
       draft.dirty = true;
+      saved.write(draft);
       status.textContent = "";
     };
     modal.querySelector(".close").onclick = () => {
       remember();
       modal.close();
-      if (draft.dirty)
-        toast("Entwurf bleibt bis zum Neuladen in diesem Tab erhalten.");
+      if (draft.dirty) toast("Entwurf bleibt in diesem Browser-Tab erhalten.");
     };
     form.onsubmit = (event) => {
       event.preventDefault();
@@ -185,11 +189,13 @@ export function createControlRounds({
           data,
         );
         drafts.delete(siteId);
+        saved.clear();
         modal.close();
         render();
         toast("Kontrollblatt gespeichert und PDF unter «Dokumente» abgelegt.");
       } catch (error) {
         status.textContent = error.message;
+        recoverSession?.(error);
       }
     };
   }
@@ -226,8 +232,10 @@ export function createControlRounds({
       ["", "Kontrollrundgänge (Standard)"],
       ...folders.map((folder) => [folder.id, folderName(folder)]),
     ];
-    const copies = new Map();
-    let scope = "site";
+    const saved = formDraft(user.id, "control-template", siteId);
+    const previous = saved.read();
+    const copies = new Map(previous?.copies || []);
+    let scope = previous?.scope || "site";
     openPaper(`<form id="control-form-editor">${heading("Kontrollblatt-Vorlagen")}${paper(
       "Kontrollblatt",
       site(siteId).name,
@@ -235,11 +243,13 @@ export function createControlRounds({
       <label>Vorlage<select name="scope"><option value="site">Diese Heizzentrale</option><option value="base">Gemeinsame Grundvorlage</option></select></label>
       <div data-template-fields></div>`,
     )}
-      <div class="modal-footer round-footer"><p data-template-status role="status"></p><button class="primary" type="submit">Vorlage speichern</button></div></form>`);
+      <div class="modal-footer round-footer"><p data-template-status role="status"></p><button class="secondary" type="button" data-template-discard hidden>Entwurf verwerfen</button><button class="primary" type="submit">Vorlage speichern</button></div></form>`);
     const form = modal.querySelector("#control-form-editor");
     const status = form.querySelector("[data-template-status]");
     const fields = form.querySelector("[data-template-fields]");
+    const discard = form.querySelector("[data-template-discard]");
     const selectScope = field(form, "scope");
+    selectScope.value = scope;
     const pointValues = () =>
       Array.from(form.querySelectorAll("[data-template-point]"), (input) => {
         if (input.dataset.templatePoint === "section")
@@ -334,8 +344,10 @@ export function createControlRounds({
     }
 
     function showFields() {
+      discard.hidden = !copies.has(scope);
       const current =
-        copies.get(scope) || (scope === "base" ? config.base : config.form);
+        copies.get(scope)?.values ||
+        (scope === "base" ? config.base : config.form);
       fields.innerHTML = `${
         scope === "site"
           ? `<div class="round-template-options">
@@ -357,6 +369,7 @@ export function createControlRounds({
       renderPoints(current.points);
     }
     showFields();
+    if (copies.has(scope)) status.textContent = "Entwurf wiederhergestellt.";
 
     fields.oninput = (event) => {
       if (!event.target.matches("[data-template-column]")) return;
@@ -471,9 +484,41 @@ export function createControlRounds({
         roundTypes: typeValues(),
       };
     }
+    function storeCopies() {
+      if (copies.size) saved.write({ scope, copies: [...copies] });
+      else saved.clear();
+    }
+    function remember() {
+      copies.set(scope, {
+        values: editorValues(),
+        version:
+          copies.get(scope)?.version ??
+          (scope === "base" ? config.base : config.form).version,
+      });
+      storeCopies();
+      discard.hidden = false;
+    }
+    discard.onclick = () => {
+      copies.delete(scope);
+      storeCopies();
+      showFields();
+      status.textContent = "";
+    };
+    form.oninput = (event) => {
+      if (fields.contains(event.target)) remember();
+    };
+    fields.addEventListener("change", remember);
+    fields.addEventListener("click", (event) => {
+      if (
+        event.target.closest(
+          "[data-column-add], [data-column-remove], [data-type-add], [data-type-remove], [data-point-action]",
+        )
+      )
+        remember();
+    });
     selectScope.onchange = (event) => {
-      copies.set(scope, editorValues());
       scope = event.target.value;
+      storeCopies();
       status.textContent = "";
       showFields();
     };
@@ -486,7 +531,9 @@ export function createControlRounds({
           "form",
           {
             scope,
-            version: (scope === "base" ? config.base : config.form).version,
+            version:
+              copies.get(scope)?.version ??
+              (scope === "base" ? config.base : config.form).version,
             ...current,
             roundTypes: current.useTypes ? current.roundTypes : [],
             points: current.points.map((point) => {
@@ -500,12 +547,14 @@ export function createControlRounds({
           },
           data,
         );
-        config = configuration(siteId);
         copies.delete(scope);
+        storeCopies();
+        config = configuration(siteId);
         showFields();
         status.textContent = "Vorlage gespeichert.";
       } catch (error) {
         status.textContent = error.message;
+        recoverSession?.(error);
       }
     };
   }

@@ -19,17 +19,20 @@ function accept(result) {
   authenticated = result.authenticated ?? !!result.data?.users?.length;
   return result.data;
 }
+function checkSession() {
+  const session = request("GET", "/api/session");
+  if (!session.authenticated)
+    throw Object.assign(Error("Bitte erneut anmelden."), { status: 401 });
+  if (session.accountId !== sessionStorage.getItem("cockpit-account"))
+    throw Object.assign(
+      Error(
+        "Die Anmeldung wurde in einem anderen Tab geändert. Bitte erneut anmelden.",
+      ),
+      { status: 401 },
+    );
+}
 function request(method, url, payload) {
-  if (method === "PUT" && url === "/api/state") {
-    const session = request("GET", "/api/session");
-    if (
-      !session.authenticated ||
-      session.accountId !== sessionStorage.getItem("cockpit-account")
-    )
-      throw Error(
-        "Die Anmeldung wurde in einem anderen Tab geändert. Bitte diese Seite neu laden und mit dem gewünschten Konto anmelden.",
-      );
-  }
+  if (method === "PUT" && url === "/api/state") checkSession();
   const xhr = new XMLHttpRequest();
   xhr.open(method, url, false);
   xhr.setRequestHeader("Content-Type", "application/json");
@@ -54,6 +57,11 @@ function request(method, url, payload) {
   return result;
 }
 export const repository = {
+  checkSession,
+  reauthenticate(name, password, accountId) {
+    request("GET", "/api/session");
+    request("POST", "/api/login", { name, password, accountId });
+  },
   call(method, url, payload) {
     return request(method, url, payload);
   },
@@ -71,6 +79,7 @@ export const repository = {
     mentionState.seen = result.mentionSeen || [];
   },
   saveControlSheet(siteId, operation, payload, data) {
+    checkSession();
     const method = ["template", "form"].includes(operation) ? "PUT" : "POST";
     Object.assign(
       data,
@@ -341,7 +350,10 @@ export async function putFile(id, file) {
     body: file,
   });
   if (!response.ok)
-    throw Error((await response.json()).error || "Upload fehlgeschlagen.");
+    throw Object.assign(
+      Error((await response.json()).error || "Upload fehlgeschlagen."),
+      { status: response.status },
+    );
 }
 export async function getFile(id) {
   const response = await fetch("/api/files/" + id, {

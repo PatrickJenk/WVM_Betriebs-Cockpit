@@ -1,4 +1,5 @@
 import { uuid } from "../services/ids.js";
+import { formDraft } from "../services/form-drafts.js";
 import {
   findMentions,
   entryMentions,
@@ -484,7 +485,9 @@ export function createLogbook(context) {
       return;
     const fullEdit = !!entry && isAdministrator(user);
     const editableFields = !entry || fullEdit;
-    const openedAt = new Date().toISOString();
+    const saved = formDraft(user.id, "logbook", id || current || "");
+    const draft = saved.read();
+    const openedAt = draft?.openedAt || new Date().toISOString();
     const canEditDate = !entry || canCorrectEntryTime(user, entry);
     const initialDate = localInput(entry?.occurredAt || openedAt);
     const dateField = `<label class="full">Ereignisdatum und Uhrzeit (Schweiz)<input name="occurredAt" type="datetime-local" required value="${esc(initialDate)}"></label>`;
@@ -525,9 +528,30 @@ export function createLogbook(context) {
     const form = $("#entry-form"),
       fields = form.elements;
     const recipients = {
-      responsible: responsibility(entry),
-      cc: new Set(copies(entry)),
+      responsible: draft ? draft.responsible : responsibility(entry),
+      cc: new Set(draft?.cc || copies(entry)),
     };
+    function remember() {
+      saved.write({
+        openedAt,
+        updatedAt: draft ? draft.updatedAt : entry?.updatedAt,
+        responsible: recipients.responsible,
+        cc: [...recipients.cc],
+        values: Object.fromEntries(
+          Array.from(
+            form.querySelectorAll(
+              "input[name]:not([type=file]), select[name], textarea[name]",
+            ),
+            (input) => [input.name, input.value],
+          ),
+        ),
+        removed: Array.from(
+          form.querySelectorAll("[data-remove-attachment]:checked"),
+          (input) => input.value,
+        ),
+        hasFiles: !!fields.files.files?.length || !!draft?.hasFiles,
+      });
+    }
     form
       .querySelector(".form-grid")
       ?.insertAdjacentHTML?.(
@@ -538,14 +562,21 @@ export function createLogbook(context) {
       form,
       "responsible",
       recipients,
-      () => redrawCopies(),
+      () => {
+        redrawCopies();
+        remember();
+      },
     );
-    const redrawCopies = bindRecipientPicker(form, "cc", recipients, () =>
-      redrawResponsible(),
-    );
+    const redrawCopies = bindRecipientPicker(form, "cc", recipients, () => {
+      redrawResponsible();
+      remember();
+    });
     bindMentions(fields.description);
     if (fields.nextSteps) bindMentions(fields.nextSteps);
-    form.querySelector(".cancel").onclick = () => modal.close();
+    form.querySelector(".cancel").onclick = () => {
+      saved.clear();
+      modal.close();
+    };
     if (editableFields) {
       const refreshPlants = () => {
         const plants = availablePlants(fields.siteId.value);
@@ -576,8 +607,34 @@ export function createLogbook(context) {
       toggle();
       fields.status.onchange = toggle;
     }
+    if (draft) {
+      for (const [name, value] of Object.entries(draft.values)) {
+        const input = fields[name];
+        if (!input || input.type === "file") continue;
+        if (
+          input.tagName === "SELECT" &&
+          !Array.from(input.options).some((option) => option.value === value)
+        )
+          continue;
+        input.value = value;
+        input.onchange?.();
+      }
+      form.querySelectorAll("[data-remove-attachment]").forEach((input) => {
+        input.checked = draft.removed.includes(input.value);
+      });
+      $("#form-error").textContent = draft.hasFiles
+        ? "Entwurf wiederhergestellt. Bitte wähle die Anhänge erneut aus."
+        : "Entwurf wiederhergestellt.";
+    }
+    form.addEventListener?.("input", remember);
+    form.addEventListener?.("change", remember);
     form.onsubmit = async (event) => {
       event.preventDefault();
+      if (fullEdit && draft && draft.updatedAt !== entry.updatedAt) {
+        $("#form-error").textContent =
+          "Der Eintrag wurde zwischenzeitlich geändert. Kopiere deine Änderungen, brich die Bearbeitung ab und öffne den aktuellen Eintrag erneut.";
+        return;
+      }
       const description = fields.description.value.trim(),
         files = Array.from(fields.files.files);
       const sameRecipients =
@@ -627,6 +684,7 @@ export function createLogbook(context) {
       const button = form.querySelector("[type=submit]");
       button.disabled = true;
       try {
+        context.checkSession?.();
         const removed = new Set(
           Array.from(
             form.querySelectorAll?.("[data-remove-attachment]:checked") || [],
@@ -741,6 +799,7 @@ export function createLogbook(context) {
           button.disabled = false;
           return;
         }
+        saved.clear();
         modal.close();
         shell();
         toast(
@@ -748,9 +807,12 @@ export function createLogbook(context) {
             ? "Erledigter Eintrag im Archiv gespeichert."
             : "Logbucheintrag gespeichert.",
         );
-      } catch {
+      } catch (error) {
         $("#form-error").textContent =
-          "Speichern nicht möglich. Bitte Serververbindung prüfen.";
+          error.status === 401
+            ? error.message
+            : "Speichern nicht möglich. Bitte Serververbindung prüfen.";
+        context.recoverSession?.(error);
         button.disabled = false;
       }
     };
