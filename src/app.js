@@ -40,7 +40,10 @@ import { createLogbook } from "./features/logbook.js";
 import { createDocuments } from "./features/documents.js";
 import { createDashboard } from "./features/dashboard.js";
 import { createControlRounds } from "./features/control-rounds.js";
-import { newestControlSheetFirst } from "./services/control-sheet.js";
+import {
+  controlTemplateChoices,
+  newestControlSheetFirst,
+} from "./services/control-sheet.js";
 let data;
 try {
   data = repository.load();
@@ -344,6 +347,7 @@ function controlTemplate(siteId) {
 }
 function controlSheetView(siteId) {
   const template = controlTemplate(siteId);
+  const choices = controlTemplateChoices(data.controlTemplates, siteId);
   const archive = data.documents
     .filter((doc) => doc.siteId === siteId && doc.controlRun)
     .sort(newestControlSheetFirst);
@@ -351,7 +355,7 @@ function controlSheetView(siteId) {
     (data.controlRuns || []).map((run) => [run.documentId, run]),
   );
   return `<div class="panel-heading"><h2>Kontrollblatt</h2>${isAdministrator(user) ? '<button type="button" class="secondary" id="control-edit-template">Vorlagen bearbeiten</button>' : ""}</div>
-    <div class="form-body"><button class="control-open-card secondary" type="button" id="control-open">${icon("file")}<span><strong>Neuer Kontrollrundgang</strong><small>Kontrollblatt öffnen</small></span></button></div>
+    <div class="form-body control-open-cards">${choices.map(({ id, title, interval }) => `<button class="control-open-card secondary" type="button" data-control-template="${esc(id)}">${icon("file")}<span><strong>${esc(choices.length === 1 && title === "Kontrollblatt" ? "Neuer Kontrollrundgang" : title)}</strong><small>${esc(interval || "Kontrollblatt öffnen")}</small></span></button>`).join("")}</div>
     ${template?.sourceId ? '<details class="form-body"><summary>Bisherige PDF-Vorlage</summary><button type="button" class="secondary" id="control-open-pdf">PDF-Vorlage öffnen</button></details>' : ""}
     ${
       archive.length
@@ -434,7 +438,10 @@ async function openControlSheet(siteId, template) {
   }
 }
 function bindControlSheet(siteId) {
-  $("#control-open").onclick = () => controlRounds.create(siteId);
+  document.querySelectorAll("[data-control-template]").forEach((button) => {
+    button.onclick = () =>
+      controlRounds.create(siteId, button.dataset.controlTemplate);
+  });
   if ($("#control-edit-template"))
     $("#control-edit-template").onclick = () => controlRounds.edit(siteId);
   const legacy = $("#control-open-pdf");

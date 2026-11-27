@@ -1643,8 +1643,14 @@ textarea {
 #mail-form legend {
   font-weight: 600;
 }
+.control-open-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
 .control-open-card {
   display: inline-flex;
+  max-width: 100%;
   min-height: 90px;
   gap: 14px;
   align-items: center;
@@ -1654,6 +1660,10 @@ textarea {
 .control-open-card svg {
   width: 32px;
   height: 32px;
+  flex: none;
+}
+.control-open-card span {
+  overflow-wrap: anywhere;
 }
 .control-open-card small {
   display: block;
@@ -1678,13 +1688,11 @@ textarea {
   overflow: hidden;
 }
 #modal.control-round-dialog[open],
-#control-template-picker,
 #control-round-form,
 #control-form-editor {
   display: flex;
   flex-direction: column;
 }
-#control-template-picker,
 #control-round-form,
 #control-form-editor {
   min-height: 0;
