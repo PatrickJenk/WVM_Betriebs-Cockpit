@@ -20,12 +20,16 @@ function baseForm(state) {
   );
 }
 
-function findForm(state, siteId) {
+function findForm(state, siteId, templateId = standard) {
   const base = baseForm(state);
   const saved =
     state.data.controlTemplates?.filter((entry) => entry.siteId === siteId) ||
     [];
-  const own = saved.find((entry) => entry.kind === standard);
+  const own = saved.find(
+    (entry) => entry.kind === standard && (entry.id ?? standard) === templateId,
+  );
+  if (!own && templateId !== standard)
+    throw store.error("Kontrollblattvorlage nicht gefunden.", 404);
   const previous =
     saved.find((entry) => entry.kind === "without-ash") ||
     saved.find((entry) => entry.kind === "with-ash");
@@ -47,6 +51,7 @@ function findForm(state, siteId) {
   const title = own?.title || "Kontrollblatt";
   return {
     siteId,
+    id: templateId,
     version: versionOf(
       own?.version,
       useBase ? base.version : null,
@@ -61,6 +66,7 @@ function findForm(state, siteId) {
     columns,
     fixedColumns,
     title,
+    interval: own?.interval || "",
     effectivePoints: useBase ? [...base.points, ...points] : points,
     example: useBase && !state.data.controlRoundBase,
   };
@@ -72,7 +78,8 @@ const clock = new Intl.DateTimeFormat("sv-SE", {
   timeStyle: "short",
 });
 
-function forms(state, siteId, authorId) {
+function forms(state, siteId, authorId, templateId = standard) {
+  const form = findForm(state, siteId, templateId);
   const id = crypto.randomUUID();
   const startedAt = new Date().toISOString();
   const startToken = store.encrypt(
@@ -80,15 +87,26 @@ function forms(state, siteId, authorId) {
       "control-round",
       siteId,
       authorId,
-      standard,
+      templateId,
       id,
       startedAt,
     ]),
   );
   const [date, time] = clock.format(new Date(startedAt)).split(" ");
+  const { title, interval } =
+    templateId === standard ? form : findForm(state, siteId);
   return {
     base: baseForm(state),
-    form: findForm(state, siteId),
+    form,
+    templates: [
+      { id: standard, title, interval },
+      ...(state.data.controlTemplates || [])
+        .filter(
+          (entry) =>
+            entry.siteId === siteId && entry.kind === standard && entry.id,
+        )
+        .map(({ id, title, interval }) => ({ id, title, interval })),
+    ],
     start: { id, startToken, date, time },
   };
 }
@@ -168,11 +186,44 @@ function saveForm(state, site, input, archiveFolder) {
   }
   if (input?.scope !== "site" || typeof input.useBase !== "boolean")
     throw store.error("Vorlagenart auswählen.");
-  checkVersion(findForm(state, site.id), input.version);
+  const templateId = input.templateId ?? standard;
+  if (
+    templateId !== standard &&
+    (typeof templateId !== "string" ||
+      !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(templateId))
+  )
+    throw store.error("Ungültige Vorlagen-ID.");
+  const templates = (state.data.controlTemplates ??= []);
+  const index = templates.findIndex(
+    (entry) =>
+      entry.siteId === site.id &&
+      entry.kind === standard &&
+      (entry.id ?? standard) === templateId,
+  );
+  if (input.version === "" && templateId !== standard) {
+    if (index >= 0)
+      throw store.error(
+        "Die Vorlage existiert bereits. Bitte erneut öffnen.",
+        409,
+      );
+  } else {
+    checkVersion(findForm(state, site.id, templateId), input.version);
+  }
   const title = text(
     input.title ?? "",
     100,
-    "Der Titel darf höchstens 100 Zeichen enthalten.",
+    templateId === standard
+      ? "Der Titel darf höchstens 100 Zeichen enthalten."
+      : "Einen Titel mit höchstens 100 Zeichen eingeben.",
+    templateId !== standard,
+  );
+  const interval = text(
+    input.interval ?? templates[index]?.interval ?? "",
+    100,
+    templateId === standard
+      ? "Das Kontrollintervall darf höchstens 100 Zeichen enthalten."
+      : "Ein Kontrollintervall mit höchstens 100 Zeichen eingeben.",
+    templateId !== standard,
   );
   const columnInput = input.columns ?? [];
   if (!Array.isArray(columnInput) || columnInput.length > 4)
@@ -225,19 +276,17 @@ function saveForm(state, site, input, archiveFolder) {
     throw store.error(
       "Jede Rundgangsart einmal und in einem eigenen Feld eingeben.",
     );
-  const templates = (state.data.controlTemplates ??= []);
-  const index = templates.findIndex(
-    (entry) => entry.siteId === site.id && entry.kind === standard,
-  );
   const next = {
     siteId: site.id,
     kind: standard,
+    ...(templateId === standard ? {} : { id: templateId }),
     version: crypto.randomUUID(),
     folderId: input.folderId,
     useBase: input.useBase,
     points,
     roundTypes,
     title,
+    interval,
     columns,
     fixedColumns,
   };
@@ -257,7 +306,7 @@ function readRun(site, author, form, input) {
       scope !== "control-round" ||
       siteId !== site.id ||
       userId !== author.id ||
-      kind !== standard ||
+      kind !== form.id ||
       runId !== input.id ||
       typeof at !== "string" ||
       !Number.isFinite(Date.parse(at))
@@ -307,6 +356,9 @@ function readRun(site, author, form, input) {
     siteId: site.id,
     siteName: site.name,
     title: form.title,
+    templateId: form.id,
+    templateVersion: form.version,
+    interval: form.interval,
     columns: form.columns,
     kind: standard,
     roundType,

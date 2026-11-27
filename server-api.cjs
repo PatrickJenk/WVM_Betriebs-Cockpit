@@ -715,13 +715,22 @@ module.exports = async function api(req, res) {
       const username = loginName(input.name);
       let chosen =
         state.data.users.find(
-          (u) => !u.initialsLogin && loginName(u.name) === username,
-        ) || state.data.users.find((u) => loginName(u.initials) === username);
+          (u) =>
+            !u.initialsLogin &&
+            loginName(u.name) === username &&
+            (input.accountId === undefined || u.id === input.accountId),
+        ) ||
+        state.data.users.find(
+          (u) =>
+            loginName(u.initials) === username &&
+            (input.accountId === undefined || u.id === input.accountId),
+        );
       security.rate(req, chosen?.id || username);
       if (
         !(await matchesAsync(input.password, chosen?.passwordHash)) ||
         !chosen ||
-        chosen.active === false
+        chosen.active === false ||
+        (input.accountId !== undefined && chosen.mustChangePassword)
       ) {
         security.audit(null, "auth.login.failed");
         throw Object.assign(Error("Benutzername oder Passwort falsch."), {

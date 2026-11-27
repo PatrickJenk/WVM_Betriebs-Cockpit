@@ -110,6 +110,9 @@ function audit(actor, action, details = {}) {
     }),
   );
 }
+const sessionIdleMs = 4 * 60 * 60 * 1000;
+const adminSessionIdleMs = 2 * 60 * 60 * 1000;
+
 function session(req, state) {
   const cookie = (req.headers.cookie || "")
     .split(";")
@@ -122,7 +125,7 @@ function session(req, state) {
   const s = db
     .prepare("SELECT * FROM sessions WHERE digest=?")
     .get(digest(token));
-  if (!s || s.expires < Date.now() || s.seen < Date.now() - 3600000)
+  if (!s || s.expires < Date.now() || s.seen < Date.now() - sessionIdleMs)
     return null;
   const user = state?.data.users.find(
     (u) =>
@@ -134,7 +137,7 @@ function session(req, state) {
   if (
     production &&
     ["Admin", "Administrator"].includes(user.role) &&
-    s.seen < Date.now() - 900000
+    s.seen < Date.now() - adminSessionIdleMs
   )
     return null;
   if (req.method !== "GET" || req.url.split("?")[0] !== "/api/state")
@@ -150,7 +153,7 @@ function tokenFor(user, res) {
     csrf = crypto.randomBytes(32).toString("base64url");
   db.prepare("DELETE FROM sessions WHERE expires<? OR seen<?").run(
     Date.now(),
-    Date.now() - 3600000,
+    Date.now() - sessionIdleMs,
   );
   db.prepare("INSERT INTO sessions VALUES(?,?,?,?,?,?)").run(
     digest(token),

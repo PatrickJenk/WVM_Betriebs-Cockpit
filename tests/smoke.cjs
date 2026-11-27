@@ -22,6 +22,8 @@ const fs = require("node:fs"),
   const { controlSheetTab, generalDocumentationId, siteTabs } =
     await import("../src/services/structure.js");
   const { createDocuments } = await import("../src/features/documents.js");
+  const { newestControlSheetFirst } =
+    await import("../src/services/control-sheet.js");
   const { createDashboard } = await import("../src/features/dashboard.js");
   const { createControlRounds } =
     await import("../src/features/control-rounds.js");
@@ -102,6 +104,7 @@ const fs = require("node:fs"),
       createDocuments,
       createDashboard,
       createControlRounds,
+      newestControlSheetFirst,
       createCollaboration,
       createLeadership,
       createJourfix,
@@ -217,6 +220,20 @@ const fs = require("node:fs"),
   assert.doesNotMatch(node("#content").innerHTML, /id="my-mentions"/);
   assert.match(node("#content").innerHTML, /data-tab="control-sheet"/);
   vm.runInContext("tab='control-sheet';render()", context);
+  const archived = [
+    { id: "archive-old", siteId: "eiger", uploadedAt: "2026-01-02T08:00:00Z" },
+    { id: "archive-new", siteId: "eiger", uploadedAt: "2026-01-02T09:00:00Z" },
+    {
+      id: "archive-other",
+      siteId: "milch",
+      uploadedAt: "2026-01-02T10:00:00Z",
+    },
+  ].map((doc) => ({ ...doc, name: doc.id + ".pdf", controlRun: true }));
+  data.documents.push(...archived);
+  const archiveView = vm.runInContext("controlSheetView('eiger')", context);
+  assert.match(archiveView, /archive-new\.pdf[\s\S]*archive-old\.pdf/);
+  assert.doesNotMatch(archiveView, /archive-other\.pdf/);
+  data.documents.splice(-archived.length);
   assert.match(node("#content").innerHTML, /Neuer Kontrollrundgang/);
   assert.doesNotMatch(
     node("#content").innerHTML,

@@ -40,6 +40,7 @@ import { createLogbook } from "./features/logbook.js";
 import { createDocuments } from "./features/documents.js";
 import { createDashboard } from "./features/dashboard.js";
 import { createControlRounds } from "./features/control-rounds.js";
+import { newestControlSheetFirst } from "./services/control-sheet.js";
 let data;
 try {
   data = repository.load();
@@ -152,6 +153,7 @@ function save() {
     repository.save(data);
     return true;
   } catch (error) {
+    recoverSession(error);
     toast(error.message || "Speichern fehlgeschlagen. Bitte erneut versuchen.");
     return false;
   }
@@ -342,9 +344,25 @@ function controlTemplate(siteId) {
 }
 function controlSheetView(siteId) {
   const template = controlTemplate(siteId);
+  const archive = data.documents
+    .filter((doc) => doc.siteId === siteId && doc.controlRun)
+    .sort(newestControlSheetFirst);
+  const runs = new Map(
+    (data.controlRuns || []).map((run) => [run.documentId, run]),
+  );
   return `<div class="panel-heading"><h2>Kontrollblatt</h2>${isAdministrator(user) ? '<button type="button" class="secondary" id="control-edit-template">Vorlagen bearbeiten</button>' : ""}</div>
     <div class="form-body"><button class="control-open-card secondary" type="button" id="control-open">${icon("file")}<span><strong>Neuer Kontrollrundgang</strong><small>Kontrollblatt öffnen</small></span></button></div>
-    ${template?.sourceId ? '<details class="form-body"><summary>Bisherige PDF-Vorlage</summary><button type="button" class="secondary" id="control-open-pdf">PDF-Vorlage öffnen</button></details>' : ""}`;
+    ${template?.sourceId ? '<details class="form-body"><summary>Bisherige PDF-Vorlage</summary><button type="button" class="secondary" id="control-open-pdf">PDF-Vorlage öffnen</button></details>' : ""}
+    ${
+      archive.length
+        ? `<div class="form-body"><h3>Abgelegte Kontrollblätter</h3><div class="table-scroll"><table class="explorer-files"><thead><tr><th>Kontrollblatt</th><th>Kontrollintervall</th><th>Erstellt am</th></tr></thead><tbody>${archive
+            .map((doc) => {
+              const run = runs.get(doc.id);
+              return `<tr><td><a href="/api/files/${encodeURIComponent(doc.id)}?inline=1" target="_blank" rel="noopener noreferrer">${esc(run?.title || doc.name)}</a></td><td>${esc(run?.interval || "–")}</td><td>${esc(fmt(doc.uploadedAt))}</td></tr>`;
+            })
+            .join("")}</tbody></table></div></div>`
+        : ""
+    }`;
 }
 async function openControlSheet(siteId, template) {
   show(`<div class="modal-heading"><div><h2>${esc(template.title || "Kontrollblatt")}</h2><p>${esc(site(siteId).name)}</p></div><button type="button" class="close icon-button" aria-label="Schliessen">×</button></div>
@@ -559,6 +577,59 @@ function show(html, back) {
     close.before(button);
   }
 }
+let sessionDialog;
+function recoverSession(error) {
+  if (
+    error.status !== 401 ||
+    !modal.open ||
+    !user.id ||
+    sessionDialog ||
+    !modal.querySelector(
+      "#entry-form, #control-round-form, #control-form-editor",
+    )
+  )
+    return;
+  const accountId = user.id;
+  const dialog = document.createElement("dialog");
+  sessionDialog = dialog;
+  dialog.innerHTML = `<form class="form-body">
+    <h2>Erneut anmelden</h2>
+    <p>Deine Eingaben bleiben geöffnet. Melde dich mit demselben Konto an und speichere danach erneut.</p>
+    <label>Benutzername<input name="username" autocomplete="username" value="${esc(user.initials)}" required></label>
+    <label>Passwort<input name="password" type="password" autocomplete="current-password" required></label>
+    <p role="alert"></p>
+    <button type="submit" class="primary">Anmelden</button>
+    <button type="button" class="secondary">Abbrechen</button>
+  </form>`;
+  document.body.append(dialog);
+  dialog.addEventListener(
+    "close",
+    () => {
+      dialog.remove();
+      sessionDialog = null;
+    },
+    { once: true },
+  );
+  dialog.querySelector('button[type="button"]').onclick = () => dialog.close();
+  dialog.querySelector("form").onsubmit = (event) => {
+    event.preventDefault();
+    const fields = event.currentTarget.elements;
+    try {
+      repository.reauthenticate(
+        fields.username.value.trim(),
+        fields.password.value,
+        accountId,
+      );
+      dialog.close();
+      toast("Wieder angemeldet. Bitte speichere erneut.");
+    } catch (loginError) {
+      dialog.querySelector('[role="alert"]').textContent = loginError.message;
+    } finally {
+      fields.password.value = "";
+    }
+  };
+  dialog.showModal();
+}
 const getState = () =>
   location.hash === "#documentation"
     ? { current: generalDocumentationId, tab: "docs", filters, onlyOpen }
@@ -583,6 +654,8 @@ const context = {
   show,
   modal,
   save,
+  checkSession: repository.checkSession,
+  recoverSession,
   render,
   shell,
   toast,
@@ -719,7 +792,11 @@ async function route() {
 }
 window.addEventListener("hashchange", route);
 window.addEventListener("beforeunload", (event) => {
-  if (jourfix.isDirty()) {
+  if (
+    jourfix.isDirty() ||
+    (modal.open &&
+      modal.querySelector('#entry-form input[type="file"]')?.files.length)
+  ) {
     event.preventDefault();
     event.returnValue = "";
   }
@@ -758,7 +835,7 @@ setInterval(async () => {
       else if (!jourfix.active()) shell();
     }
   } catch (error) {
-    if (error.status === 401) accounts.logout();
+    if (error.status === 401 && !modal.open) accounts.logout();
   } finally {
     syncing = false;
   }

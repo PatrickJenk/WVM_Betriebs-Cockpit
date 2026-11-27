@@ -124,6 +124,12 @@ async function call(url, method = "GET", payload, token) {
       name: "Oktober",
     },
     { id: "demo-docs", siteId: "demo-site", parentId: null, name: "Schemas" },
+    {
+      id: "demo-control-archive",
+      siteId: "demo-site",
+      parentId: "demo-docs",
+      name: "Kontrollblätter",
+    },
   );
   state = await save(state);
   async function upload(id) {
@@ -603,6 +609,154 @@ async function call(url, method = "GET", payload, token) {
   );
   const unchangedReport = await fetch(reportUrl, auth);
   assert.deepEqual(Buffer.from(await unchangedReport.arrayBuffer()), bytesPdf);
+
+  const weekly = {
+    scope: "site",
+    templateId: "d8ab55d7-a474-4cf1-a3ec-68a9398863d5",
+    version: "",
+    title: "Wöchentlicher Rundgang",
+    interval: "Wöchentlich",
+    folderId: "demo-control-archive",
+    useBase: false,
+    points: ["Leckagen prüfen"],
+    roundTypes: [],
+  };
+  const yearly = {
+    ...weekly,
+    templateId: "36c4cc0e-c3c8-432c-9bc8-fb4d58cbe692",
+    title: "Jährlicher Rundgang",
+    interval: "Jährlich",
+    points: ["Wartungsprotokoll kontrollieren"],
+  };
+  const selectedUrl = formUrl + "?templateId=" + weekly.templateId;
+  assert.equal((await call(formUrl, "PUT", weekly, member)).status, 403);
+  assert.equal(
+    (await call(formUrl, "PUT", { ...weekly, interval: "" }, admin)).status,
+    400,
+  );
+  assert.equal((await call(formUrl, "PUT", weekly, admin)).status, 200);
+  assert.equal((await call(formUrl, "PUT", weekly, admin)).status, 409);
+  assert.equal((await call(formUrl, "PUT", yearly, admin)).status, 200);
+  const {
+    form: weeklyForm,
+    start: weeklyStart,
+    templates,
+  } = await getConfig(selectedUrl);
+  assert.deepEqual(
+    templates.map(({ id }) => id),
+    ["standard", weekly.templateId, yearly.templateId],
+  );
+  assert.deepEqual((await getConfig()).form, withoutType.form);
+  assert.deepEqual(weeklyForm.effectivePoints, weekly.points);
+  assert.equal(weeklyForm.interval, weekly.interval);
+  const otherSiteFormUrl = "/api/sites/eiger/control-form";
+  assert.equal(
+    (
+      await call(
+        otherSiteFormUrl + "?templateId=" + weekly.templateId,
+        "GET",
+        undefined,
+        member,
+      )
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await call(
+        otherSiteFormUrl,
+        "PUT",
+        { ...weekly, version: weeklyForm.version, folderId: "" },
+        admin,
+      )
+    ).status,
+    404,
+  );
+
+  const weeklySubmission = {
+    id: weeklyStart.id,
+    startToken: weeklyStart.startToken,
+    version: weeklyForm.version,
+    templateId: weekly.templateId,
+    answers: [{ status: "yes" }],
+  };
+  const standardStart = (await getConfig()).start;
+  assert.equal(
+    (
+      await call(
+        submitUrl,
+        "POST",
+        {
+          ...weeklySubmission,
+          id: standardStart.id,
+          startToken: standardStart.startToken,
+        },
+        member,
+      )
+    ).status,
+    409,
+  );
+  const weeklyResult = await call(submitUrl, "POST", weeklySubmission, member);
+  assert.equal(weeklyResult.status, 201, JSON.stringify(weeklyResult.value));
+  const weeklyRun = weeklyResult.value.data.controlRuns.find(
+    (run) => run.id === weeklyStart.id,
+  );
+  assert.equal(weeklyRun.title, weekly.title);
+  assert.equal(weeklyRun.interval, weekly.interval);
+  assert.equal(weeklyRun.templateId, weekly.templateId);
+  assert.equal(weeklyRun.items[0].point, weekly.points[0]);
+  const weeklyFile = weeklyResult.value.data.documents.find(
+    (doc) => doc.id === weeklyRun.documentId,
+  );
+  assert.equal(weeklyFile.folderId, weekly.folderId);
+  const weeklyReportUrl =
+    base + "/api/sites/demo-site/control-report/" + weeklyRun.id;
+  const weeklyReport = async () =>
+    Buffer.from(await (await fetch(weeklyReportUrl, auth)).arrayBuffer());
+  const originalWeeklyPdf = await weeklyReport();
+  const weeklyPdf = openPdf(originalWeeklyPdf);
+  const weeklyPage = await (await weeklyPdf.promise).getPage(1);
+  assert.ok(
+    (await weeklyPage.getTextContent()).items.some(
+      ({ str }) => str === weekly.interval,
+    ),
+  );
+  await weeklyPdf.destroy();
+  const revisedWeekly = {
+    ...weekly,
+    version: weeklyForm.version,
+    title: "Sicherheitsrundgang",
+    interval: "Alle zwei Wochen",
+    points: ["Sicherheitsventil prüfen"],
+  };
+  const staleWeeklyStart = (await getConfig(selectedUrl)).start;
+  assert.equal((await call(formUrl, "PUT", revisedWeekly, admin)).status, 200);
+  assert.equal((await call(formUrl, "PUT", revisedWeekly, admin)).status, 409);
+  assert.equal(
+    (
+      await call(
+        submitUrl,
+        "POST",
+        {
+          ...weeklySubmission,
+          id: staleWeeklyStart.id,
+          startToken: staleWeeklyStart.startToken,
+        },
+        member,
+      )
+    ).status,
+    409,
+  );
+  assert.deepEqual(await weeklyReport(), originalWeeklyPdf);
+  assert.deepEqual(
+    (await read()).data.controlRuns.find((run) => run.id === weeklyRun.id),
+    weeklyRun,
+  );
+  assert.deepEqual(
+    (await getConfig(selectedUrl)).form.effectivePoints,
+    revisedWeekly.points,
+  );
+
   const unauthorizedRemove = await read(member);
   unauthorizedRemove.data.documents = unauthorizedRemove.data.documents.filter(
     (d) => d.id !== report.id,
@@ -717,6 +871,11 @@ async function call(url, method = "GET", payload, token) {
   await stop();
   await start();
   state = await read();
+  assert.deepEqual(
+    (await getConfig(selectedUrl)).form.effectivePoints,
+    revisedWeekly.points,
+  );
+  assert.deepEqual(await weeklyReport(), originalWeeklyPdf);
   assert.equal(
     state.data.structure.networks.find((n) => n.id === "demo-net").name,
     "Umbenannt",

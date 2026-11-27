@@ -131,6 +131,21 @@ let scanner;
   assert.match(login.headers.get("set-cookie"), /HttpOnly; SameSite=Strict/);
   assert.match(login.value.token, /^[A-Za-z0-9_-]{43}$/);
   assert.ok(!JSON.stringify(login.value).includes(originalHash));
+  const loginForDifferentAccount = await call("/api/login", "POST", {
+    name: "WVM-admin",
+    password: "9876",
+    accountId: "pj",
+  });
+  assert.equal(loginForDifferentAccount.status, 401);
+  assert.equal(loginForDifferentAccount.headers.get("set-cookie"), null);
+  const renewed = await call(
+    "/api/login",
+    "POST",
+    { name: "ADM", password: "9876", accountId: "admin" },
+    admin,
+  );
+  assert.equal(renewed.status, 200);
+  assert.equal(renewed.value.accountId, "admin");
   assert.equal(
     (
       await call("/api/state", "GET", undefined, admin, {
@@ -386,8 +401,39 @@ let scanner;
   assert.equal(logged.status, 200);
   assert.ok(!logged.value.token);
   assert.match(logged.headers.get("set-cookie"), /Secure/);
+  const productionDb = new DatabaseSync(path.join(root, "cockpit.sqlite"));
+  const sessionDigest = crypto
+    .createHash("sha256")
+    .update(p.cookie.slice("cockpit-session=".length))
+    .digest("hex");
+  const setIdle = productionDb.prepare(
+    "UPDATE sessions SET seen=? WHERE digest=?",
+  );
+  assert.equal(setIdle.run(Date.now() - 90 * 60_000, sessionDigest).changes, 1);
   assert.equal(
     (await call("/api/state", "GET", undefined, p, proxy)).status,
+    200,
+  );
+  setIdle.run(Date.now() - 121 * 60_000, sessionDigest);
+  productionDb.close();
+  assert.equal(
+    (await call("/api/state", "GET", undefined, p, proxy)).status,
+    401,
+  );
+  assert.equal(
+    (
+      await call(
+        "/api/login",
+        "POST",
+        {
+          name: "ADM",
+          password: "AdminSecurePassword123",
+          accountId: "admin",
+        },
+        p,
+        proxy,
+      )
+    ).status,
     200,
   );
   assert.equal(

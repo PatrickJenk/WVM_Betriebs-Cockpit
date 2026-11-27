@@ -131,6 +131,12 @@ const assert = require("node:assert/strict");
   const { parseHTML } = require("linkedom");
   const { document } = parseHTML('<div id="entry-test"></div>');
   global.document = document;
+  const storedDrafts = new Map();
+  global.sessionStorage = {
+    getItem: (key) => storedDrafts.get(key) ?? null,
+    setItem: (key, value) => storedDrafts.set(key, value),
+    removeItem: (key) => storedDrafts.delete(key),
+  };
   data.users.push(
     { id: "alice", name: "Alice Beispiel", email: "alice@example.invalid" },
     { id: "bob", name: "Bob Beispiel", email: "bob@example.invalid" },
@@ -195,6 +201,30 @@ const assert = require("node:assert/strict");
   ccSearch.value = "Alice";
   ccSearch.oninput();
   assert.equal(cc.querySelectorAll(".recipient-choices button").length, 0);
+  const description = document.querySelector('textarea[name="description"]');
+  description.value = "Ungespeicherte Feststellung";
+  description.dispatchEvent(
+    new document.defaultView.Event("input", { bubbles: true }),
+  );
+  domLogbook.entryForm();
+  assert.equal(
+    document.querySelector('textarea[name="description"]').value,
+    "Ungespeicherte Feststellung",
+  );
+  assert.match(
+    document.querySelector(
+      '[data-recipient-picker="responsible"] .recipient-selection',
+    ).textContent,
+    /Alice Beispiel/,
+  );
+  assert.equal(
+    document.querySelectorAll(
+      '[data-recipient-picker="cc"] .recipient-selection button',
+    ).length,
+    2,
+  );
+  document.querySelector("#entry-form .cancel").click();
+  assert.equal(storedDrafts.size, 0);
   console.log(
     "Passed: dependent network/site/plants, activity selection, timestamp correction and append-only description.",
   );
