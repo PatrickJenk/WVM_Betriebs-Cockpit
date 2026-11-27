@@ -1773,6 +1773,12 @@ textarea {
   font: inherit;
   font-size: 14px;
 }
+.round-column-row {
+  flex-wrap: wrap;
+}
+.round-column-row input {
+  min-width: 8rem;
+}
 .round-table-scroll {
   overflow-x: auto;
 }
@@ -1807,8 +1813,13 @@ textarea {
 .round-comment-col {
   width: 42%;
 }
-.round-table th:is(:nth-child(2), :nth-child(3)),
-.round-table td.round-choice {
+.round-extra-col {
+  width: 115px;
+}
+.round-extra-col ~ .round-comment-col {
+  width: 30%;
+}
+.round-table .round-choice {
   padding-inline: 3px;
   text-align: center;
 }
@@ -1868,6 +1879,16 @@ textarea {
 }
 .round-table tbody tr:nth-child(even) {
   background: #f5f8fa;
+}
+.round-table tbody .round-section {
+  background: #e4eef5;
+}
+.round-section textarea {
+  font-weight: 700;
+}
+.round-table td > input {
+  width: 100%;
+  min-width: 0;
 }
 .round-table tbody tr:last-child td {
   border-bottom: 1px solid #cbdbe5;

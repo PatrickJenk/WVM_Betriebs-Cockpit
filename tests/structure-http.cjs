@@ -441,7 +441,13 @@ async function call(url, method = "GET", payload, token) {
     version: afterBase.form.version,
     folderId: "demo-docs",
     useBase: true,
-    points: ["Druck prüfen"],
+    title: "Pflichtenheft Anlagewart",
+    points: [
+      { type: "section", label: "Heizraum" },
+      { type: "point", label: "Druck prüfen", cells: ["Immer", ""] },
+    ],
+    columns: ["Wann", "Messwert"],
+    fixedColumns: [true, false],
     roundTypes: ["Normalrunde", "Nachkontrolle"],
   };
   assert.equal((await call(formUrl, "PUT", newForm, member)).status, 403);
@@ -461,8 +467,11 @@ async function call(url, method = "GET", payload, token) {
   const { form: updated, start: roundStart } = await getConfig();
   assert.deepEqual(updated.effectivePoints, [
     ...baseEdit.points,
-    "Druck prüfen",
+    ...newForm.points,
   ]);
+  assert.deepEqual(updated.columns, newForm.columns);
+  assert.deepEqual(updated.fixedColumns, newForm.fixedColumns);
+  assert.equal(updated.title, newForm.title);
   assert.deepEqual(updated.roundTypes, newForm.roundTypes);
 
   const submitUrl = "/api/sites/demo-site/control-submit";
@@ -477,7 +486,7 @@ async function call(url, method = "GET", payload, token) {
     answers: [
       { status: "yes" },
       { status: "no" },
-      { status: "yes", comment: "Geprüft." },
+      { status: "yes", comment: "Geprüft.", cells: ["Verändert", "1,7 bar"] },
     ],
   };
   assert.equal(
@@ -534,6 +543,9 @@ async function call(url, method = "GET", payload, token) {
   assert.equal(runSaved.roundType, "Nachkontrolle");
   assert.equal(runSaved.items[1].status, "no");
   assert.equal(runSaved.items[1].comment, "");
+  assert.deepEqual(runSaved.items[2], { section: "Heizraum" });
+  assert.deepEqual(runSaved.items[3].cells, ["Immer", "1,7 bar"]);
+  assert.equal(runSaved.title, newForm.title);
   const digitalFile = digital.value.data.documents.find(
     (item) => item.id === runSaved.documentId,
   );
@@ -550,6 +562,13 @@ async function call(url, method = "GET", payload, token) {
   assert.equal(responsePdf.status, 200);
   const bytesPdf = Buffer.from(await responsePdf.arrayBuffer());
   assert.equal(bytesPdf.subarray(0, 5).toString(), "%PDF-");
+  const roundPdf = openPdf(bytesPdf);
+  const page = await (await roundPdf.promise).getPage(1);
+  const pageText = (await page.getTextContent()).items.map((item) => item.str);
+  for (const label of [newForm.title, "Wann", "Heizraum", "Immer", "1,7 bar"])
+    assert.ok(pageText.includes(label), label);
+  assert.ok(page.view[2] > page.view[3]);
+  await roundPdf.destroy();
   assert.equal((await call(submitUrl, "POST", submission, member)).status, 200);
 
   assert.equal(

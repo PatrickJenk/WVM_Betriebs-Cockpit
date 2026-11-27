@@ -26,7 +26,6 @@ const margin = 44;
 const textSize = 10;
 const lineHeight = 14;
 const padding = 8;
-const tableWidth = 507.28;
 
 function wrap(doc, text, width) {
   return text.split(/\r\n|\r|\n/).flatMap((paragraph) => {
@@ -54,8 +53,10 @@ function wrap(doc, text, width) {
 
 function renderRoundPdf(run, logo) {
   return new Promise((resolve, reject) => {
+    const extraColumns = run.startedAt ? run.columns || [] : [];
     const doc = new PDFDocument({
       size: "A4",
+      layout: extraColumns.length ? "landscape" : "portrait",
       margin,
       bufferPages: true,
       info: { Title: run.title, CreationDate: new Date(run.at) },
@@ -64,7 +65,20 @@ function renderRoundPdf(run, logo) {
     doc.on("data", (bytes) => streams.push(bytes));
     doc.once("end", () => resolve(Buffer.concat(streams)));
     doc.once("error", reject);
-    const columns = run.startedAt ? choiceColumns : legacyColumns;
+    const tableWidth = doc.page.width - 2 * margin;
+    const columns = extraColumns.length
+      ? [
+          { ...choiceColumns[0], width: 180 },
+          ...extraColumns.map((label) => ({
+            label,
+            width: (tableWidth - 435) / extraColumns.length,
+          })),
+          ...choiceColumns.slice(1, 3),
+          { ...choiceColumns[3], width: 170 },
+        ]
+      : run.startedAt
+        ? choiceColumns
+        : legacyColumns;
     const image = logo && doc.openImage(logo);
     let y = margin;
     const bottom = () => doc.page.height - 62;
@@ -73,7 +87,7 @@ function renderRoundPdf(run, logo) {
     function newPage() {
       doc.addPage();
       doc.font("Helvetica-Bold").fontSize(11).fillColor(colors.ink);
-      doc.text("Kontrollblatt / " + run.siteName, margin, margin, {
+      doc.text(run.title + " / " + run.siteName, margin, margin, {
         width: tableWidth - (logo ? 96 : 0),
       });
       if (image)
@@ -84,21 +98,31 @@ function renderRoundPdf(run, logo) {
       y = Math.max(doc.y + 12, margin + 35);
     }
     function tableHeader() {
-      doc.rect(margin, y, tableWidth, 25).fill(colors.ink);
-      doc.font("Helvetica-Bold").fontSize(textSize).fillColor("#ffffff");
+      doc.font("Helvetica-Bold").fontSize(textSize);
+      const labels = columns.map((col) =>
+        wrap(doc, col.label, col.width - 2 * padding),
+      );
+      const height = Math.max(
+        25,
+        11 + Math.max(...labels.map((lines) => lines.length)) * lineHeight,
+      );
+      doc.rect(margin, y, tableWidth, height).fill(colors.ink);
+      doc.fillColor("#ffffff");
       let x = margin;
-      for (const col of columns) {
-        text(
-          col.label,
-          x +
-            (col.choice
-              ? (col.width - doc.widthOfString(col.label)) / 2
-              : padding),
-          y + 7,
+      for (const [index, col] of columns.entries()) {
+        labels[index].forEach((line, row) =>
+          text(
+            line,
+            x +
+              (col.choice
+                ? (col.width - doc.widthOfString(line)) / 2
+                : padding),
+            y + 7 + row * lineHeight,
+          ),
         );
         x += col.width;
       }
-      y += 25;
+      y += height;
     }
     const headerWidth = tableWidth - (logo ? 150 : 0);
     if (image)
@@ -157,9 +181,36 @@ function renderRoundPdf(run, logo) {
     y += 19;
     tableHeader();
     for (const [index, item] of run.items.entries()) {
+      if (item.section) {
+        doc.font("Helvetica-Bold").fontSize(textSize);
+        const lines = wrap(doc, item.section, tableWidth - 2 * padding);
+        const height = lines.length * lineHeight + 2 * padding;
+        if (
+          y +
+            height +
+            (run.items[index + 1]?.point ? lineHeight + 2 * padding : 0) >
+          bottom()
+        ) {
+          newPage();
+          tableHeader();
+        }
+        doc.rect(margin, y, tableWidth, height).fill(colors.light);
+        doc.font("Helvetica-Bold").fontSize(textSize).fillColor(colors.ink);
+        lines.forEach((line, row) =>
+          text(line, margin + padding, y + padding + row * lineHeight),
+        );
+        y += height;
+        continue;
+      }
       doc.font("Helvetica").fontSize(textSize);
       const values = run.startedAt
-        ? [item.point, "", "", item.comment || "-"]
+        ? [
+            item.point,
+            ...extraColumns.map((_, col) => item.cells?.[col] || ""),
+            "",
+            "",
+            item.comment || "-",
+          ]
         : [item.point, controlStatusLabel(item.status), item.comment || "-"];
       const lines = values.map((value, i) =>
         wrap(doc, value, columns[i].width - 2 * padding),

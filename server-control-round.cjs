@@ -1,7 +1,11 @@
 const crypto = require("node:crypto");
 const store = require("./server-security.cjs");
 const examples = require("./src/data/control-round-examples.json");
-const { controlChoices } = require("./src/services/control-sheet.js");
+const {
+  controlChoices,
+  isRoundSection,
+  roundPointLabel,
+} = require("./src/services/control-sheet.js");
 
 const standard = "standard";
 const versionOf = (...values) =>
@@ -38,6 +42,9 @@ function findForm(state, siteId) {
   const useBase = own?.useBase ?? !previous?.points?.length;
   const points = own?.points || previous?.points || [];
   const roundTypes = own?.roundTypes || [];
+  const columns = own?.columns || [];
+  const fixedColumns = own?.fixedColumns || [];
+  const title = own?.title || "Kontrollblatt";
   return {
     siteId,
     version: versionOf(
@@ -51,6 +58,9 @@ function findForm(state, siteId) {
     useBase,
     points,
     roundTypes,
+    columns,
+    fixedColumns,
+    title,
     effectivePoints: useBase ? [...base.points, ...points] : points,
     example: useBase && !state.data.controlRoundBase,
   };
@@ -93,7 +103,7 @@ function text(value, limit, message, required = false) {
   return value.trim();
 }
 
-function pointsFrom(input, minimum) {
+function pointsFrom(input, minimum, fixedColumns = []) {
   if (!Array.isArray(input) || input.length < minimum || input.length > 50)
     throw store.error(
       minimum
@@ -101,16 +111,43 @@ function pointsFrom(input, minimum) {
         : "Höchstens 50 zusätzliche Kontrollpunkte eingeben.",
     );
   return input.map((point) => {
+    const section = isRoundSection(point);
+    const values = point?.type === "point";
     const label = text(
-      point,
+      section || values ? point.label : point,
       240,
       "Kontrollpunkte benötigen eine Bezeichnung mit höchstens 240 Zeichen.",
       true,
     );
     if (/[\r\n]/.test(label))
       throw store.error("Pro Feld einen Kontrollpunkt eingeben.");
-    return label;
+    if (section) return { type: "section", label };
+    if (!values) return label;
+    if (
+      !Array.isArray(point.cells) ||
+      point.cells.length !== fixedColumns.length
+    )
+      throw store.error(
+        "Die Zusatzfelder stimmen nicht mit der Vorlage überein.",
+      );
+    const cells = fixedColumns.map((fixed, index) =>
+      fixed ? extraText(point.cells[index]) : "",
+    );
+    return cells.some(Boolean) ? { type: "point", label, cells } : label;
   });
+}
+
+function requireControlPoint(points) {
+  if (points.every(isRoundSection))
+    throw store.error("Mindestens einen Kontrollpunkt eingeben.");
+}
+
+function extraText(value) {
+  return text(
+    value ?? "",
+    150,
+    "Zusatzfelder dürfen höchstens 150 Zeichen enthalten.",
+  );
 }
 
 function checkVersion(form, version) {
@@ -125,13 +162,46 @@ function saveForm(state, site, input, archiveFolder) {
   if (input?.scope === "base") {
     checkVersion(baseForm(state), input.version);
     const points = pointsFrom(input.points, 1);
+    requireControlPoint(points);
     state.data.controlRoundBase = { version: crypto.randomUUID(), points };
     return;
   }
   if (input?.scope !== "site" || typeof input.useBase !== "boolean")
     throw store.error("Vorlagenart auswählen.");
   checkVersion(findForm(state, site.id), input.version);
-  const points = pointsFrom(input.points, input.useBase ? 0 : 1);
+  const title = text(
+    input.title ?? "",
+    100,
+    "Der Titel darf höchstens 100 Zeichen enthalten.",
+  );
+  const columnInput = input.columns ?? [];
+  if (!Array.isArray(columnInput) || columnInput.length > 4)
+    throw store.error("Höchstens vier Zusatzspalten eingeben.");
+  const columns = columnInput.map((label) =>
+    text(
+      label,
+      40,
+      "Spalten benötigen einen Namen mit höchstens 40 Zeichen.",
+      true,
+    ),
+  );
+  if (
+    columns.some((label) => /[\r\n]/.test(label)) ||
+    new Set(columns.map((label) => label.toLocaleLowerCase("de-CH"))).size !==
+      columns.length
+  )
+    throw store.error(
+      "Jeden Zusatzspaltennamen einmal und in einem eigenen Feld eingeben.",
+    );
+  const fixedColumns = input.fixedColumns ?? columns.map(() => false);
+  if (
+    !Array.isArray(fixedColumns) ||
+    fixedColumns.length !== columns.length ||
+    fixedColumns.some((fixed) => typeof fixed !== "boolean")
+  )
+    throw store.error("Für jede Zusatzspalte eine Eingabeart auswählen.");
+  const points = pointsFrom(input.points, input.useBase ? 0 : 1, fixedColumns);
+  if (!input.useBase) requireControlPoint(points);
   if (
     input.folderId !== "" &&
     (!store.validId(input.folderId) || !archiveFolder(state, input.folderId))
@@ -167,6 +237,9 @@ function saveForm(state, site, input, archiveFolder) {
     useBase: input.useBase,
     points,
     roundTypes,
+    title,
+    columns,
+    fixedColumns,
   };
   if (index < 0) templates.push(next);
   else templates[index] = next;
@@ -205,18 +278,23 @@ function readRun(site, author, form, input) {
   )
     throw store.error("Eine gültige Rundgangsart auswählen.");
   const [date, time] = clock.format(new Date(startedAt)).split(" ");
-  if (
-    !Array.isArray(input.answers) ||
-    input.answers.length !== form.effectivePoints.length
-  )
+  const points = form.effectivePoints.filter((point) => !isRoundSection(point));
+  if (!Array.isArray(input.answers) || input.answers.length !== points.length)
     throw store.error("Für jeden Kontrollpunkt Ja oder Nein auswählen.");
-  const items = form.effectivePoints.map((point, index) => {
-    const answer = input.answers[index];
+  let answerIndex = 0;
+  const items = form.effectivePoints.map((point) => {
+    if (isRoundSection(point)) return { section: point.label };
+    const answer = input.answers[answerIndex++];
     if (!controlChoices.some(([status]) => status === answer?.status))
       throw store.error("Für jeden Kontrollpunkt Ja oder Nein auswählen.");
     return {
-      point,
+      point: roundPointLabel(point),
       status: answer.status,
+      cells: form.columns.map((_, index) =>
+        form.fixedColumns[index]
+          ? (point.cells?.[index] ?? "")
+          : extraText(answer.cells?.[index]),
+      ),
       comment: text(
         answer.comment ?? "",
         1500,
@@ -228,7 +306,8 @@ function readRun(site, author, form, input) {
     id: input.id,
     siteId: site.id,
     siteName: site.name,
-    title: "Kontrollblatt",
+    title: form.title,
+    columns: form.columns,
     kind: standard,
     roundType,
     date,

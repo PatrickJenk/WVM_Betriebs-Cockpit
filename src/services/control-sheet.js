@@ -30,3 +30,7 @@ export const controlStatusLabel = (status) =>
   controlStatuses.find(([value]) => value === status)?.[1] || "";
 
 export const controlDateLabel = (date) => date.split("-").reverse().join(".");
+
+export const isRoundSection = (point) => point?.type === "section";
+export const roundPointLabel = (point) =>
+  typeof point === "string" ? point : point.label;
